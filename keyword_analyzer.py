@@ -7,6 +7,7 @@ import json
 import os
 from typing import List, Dict, Any, Optional
 from contextlib import nullcontext
+from pathlib import Path
 from dotenv import load_dotenv
 from models import ProductDetails, KeywordResult
 
@@ -20,11 +21,22 @@ MODEL = os.environ.get("OPENROUTER_MODEL", "google/gemini-2.5-flash-lite")
 BATCH_SIZE = int(os.environ.get("BATCH_SIZE", 30))
 # 0 means no limit - send all requests at once
 MAX_CONCURRENT_REQUESTS = int(os.environ.get("MAX_CONCURRENT_REQUESTS", 0))
+PROMPT_PATH = Path(__file__).resolve().with_name("relevancy_analysis.txt")
+
+
+def load_prompt_template() -> str:
+    """Load the relevancy analysis prompt template from disk."""
+    if not PROMPT_PATH.exists():
+        raise FileNotFoundError(f"Prompt template not found at {PROMPT_PATH}")
+    return PROMPT_PATH.read_text(encoding="utf-8")
 
 
 def create_batch_prompt_with_details(keywords: List[str], product_details: ProductDetails) -> str:
     """Create a batch prompt for multiple keywords using structured product details"""
-    
+
+    # Load the template
+    template = load_prompt_template()
+
     # Build product details string from Keepa data
     product_info = f"""Hero Product Details:
 ASIN: {product_details.asin or 'N/A'}
@@ -34,58 +46,32 @@ Rating: {product_details.rating or 'N/A'}
 Review count: {product_details.review_count or 'N/A'}
 Price: {product_details.price or 'N/A'}
 Product features: {product_details.product_features or 'N/A'}"""
-    
-    batch_prompt = f"""Analyze the following {len(keywords)} search keywords for Amazon. Process each one individually and return a JSON array with the analysis for each keyword.
 
-{product_info}
+    # Fill in the template placeholders
+    batch_prompt = template.replace("{NUM_KEYWORDS}", str(len(keywords)))
+    batch_prompt = batch_prompt.replace("{PRODUCT_INFO}", product_info)
+    batch_prompt = batch_prompt.replace("{BRAND}", product_details.brand or 'brand')
+    batch_prompt = batch_prompt.replace("{KEYWORDS}", json.dumps(keywords, indent=2))
 
-Task: For each keyword, classify it and score its relevance:
-1. Type: generic (general category), our_brand ({product_details.brand or 'brand'}), competitor_brand (other brands)
-2. Score: 1-10 relevance (1-3: low, 4-6: medium, 7-9: high, 10: perfect match)
-
-Keywords to analyze:
-{json.dumps(keywords, indent=2)}
-
-Return ONLY a valid JSON array with one object per keyword:
-[
-  {{
-    "keyword": "keyword text",
-    "type": "generic|our_brand|competitor_brand",
-    "score": 1-10,
-    "reasoning": "brief explanation"
-  }},
-  ...
-]"""
-    
     return batch_prompt
 
 
 def create_batch_prompt_with_description(keywords: List[str], description: str) -> str:
     """Create a batch prompt for multiple keywords using text description"""
-    
-    batch_prompt = f"""Analyze the following {len(keywords)} search keywords for Amazon. Process each one individually and return a JSON array with the analysis for each keyword.
 
-Product Description:
-{description}
+    # Load the template
+    template = load_prompt_template()
 
-Task: For each keyword, classify it and score its relevance to the product described above:
-1. Type: generic (general category), our_brand (if brand mentioned in description), competitor_brand (other brands)
-2. Score: 1-10 relevance (1-3: low, 4-6: medium, 7-9: high, 10: perfect match)
+    # Build product info section from description
+    product_info = f"""Product Description:
+{description}"""
 
-Keywords to analyze:
-{json.dumps(keywords, indent=2)}
+    # Fill in the template placeholders
+    batch_prompt = template.replace("{NUM_KEYWORDS}", str(len(keywords)))
+    batch_prompt = batch_prompt.replace("{PRODUCT_INFO}", product_info)
+    batch_prompt = batch_prompt.replace("{BRAND}", "if brand mentioned in description")
+    batch_prompt = batch_prompt.replace("{KEYWORDS}", json.dumps(keywords, indent=2))
 
-Return ONLY a valid JSON array with one object per keyword:
-[
-  {{
-    "keyword": "keyword text",
-    "type": "generic|our_brand|competitor_brand",
-    "score": 1-10,
-    "reasoning": "brief explanation"
-  }},
-  ...
-]"""
-    
     return batch_prompt
 
 

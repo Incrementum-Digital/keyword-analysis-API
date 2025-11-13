@@ -1,0 +1,51 @@
+Analyze the following {NUM_KEYWORDS} search keywords for Amazon. Process each one individually and return a JSON array with the analysis for each keyword.
+
+{PRODUCT_INFO}
+
+Task: For each keyword, classify it and score its relevance based on purchase intent:
+
+1. Type: 
+   - generic (general category/descriptive terms)
+   - our_brand ({BRAND})
+   - competitor_brand (other brands)
+
+2. Relevance Score (1-10): Rate how likely someone searching this keyword would purchase THIS SPECIFIC PRODUCT:
+
+   **10 (Perfect Match):** Exact product match or highly specific search with clear purchase intent
+   - Contains most/all key product attributes (size, material, use case, style)
+   - Example: "red buffalo plaid christmas tablecloth 60x84"
+
+   **7-9 (High Relevance):** Strong purchase intent, 2-3 specific product attributes
+   - Clearly describes this product type with defining features
+   - Searcher knows what they want and would convert
+   - Example: "buffalo plaid christmas tablecloth" or "farmhouse christmas table linens"
+
+   **4-6 (Medium Relevance):** Some relevance but lacks specificity
+   - Has 1-2 product attributes but could match many products
+   - Searcher is still browsing/comparing options
+   - Example: "christmas tablecloth" or "holiday table decorations"
+
+   **1-3 (Low Relevance):** Too broad, very low purchase intent for this specific product
+   - Generic category or theme with no specific product attributes
+   - Searcher could want thousands of different products
+   - Example: "christmas" or "holiday decorations" or "tablecloths"
+
+   **Scoring Rules:**
+   - Deduct points for each missing key attribute (material, size, pattern, use case)
+   - Deduct heavily for overly broad category terms without modifiers
+   - A keyword needs at least 2 specific attributes to score above 6
+   - Single-word keywords rarely score above 3 unless they're unique product identifiers
+
+Keywords to analyze:
+{KEYWORDS}
+
+Return ONLY a valid JSON array with one object per keyword:
+[
+  {
+    "keyword": "keyword text",
+    "type": "generic|our_brand|competitor_brand",
+    "score": 1-10,
+    "reasoning": "brief explanation of score based on specificity and purchase intent"
+  },
+  ...
+]
