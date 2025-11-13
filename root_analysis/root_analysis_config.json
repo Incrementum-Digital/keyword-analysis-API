@@ -1,0 +1,9 @@
+{
+  "auto": {
+    "stopword_threshold": 0.9
+  },
+  "irregular_singulars": {
+    "leaves": "leaf"
+  },
+  "stopwords": []
+}
