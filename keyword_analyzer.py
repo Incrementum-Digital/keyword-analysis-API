@@ -4,12 +4,15 @@ Keyword analysis module using OpenRouter API
 import asyncio
 import aiohttp
 import json
+import logging
 import os
 from typing import List, Dict, Any, Optional
 from contextlib import nullcontext
 from pathlib import Path
 from dotenv import load_dotenv
 from models import ProductDetails, KeywordResult
+
+logger = logging.getLogger(__name__)
 
 # Load environment variables
 load_dotenv()
@@ -19,9 +22,12 @@ OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY")
 OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
 MODEL = os.environ.get("OPENROUTER_MODEL", "google/gemini-2.5-flash-lite")
 BATCH_SIZE = int(os.environ.get("BATCH_SIZE", 30))
-# 0 means no limit - send all requests at once
-MAX_CONCURRENT_REQUESTS = int(os.environ.get("MAX_CONCURRENT_REQUESTS", 0))
+# Default to 10 concurrent requests to avoid rate limiting (0 = unlimited)
+MAX_CONCURRENT_REQUESTS = int(os.environ.get("MAX_CONCURRENT_REQUESTS", 10))
 PROMPT_PATH = Path(__file__).resolve().with_name("relevancy_analysis.txt")
+
+# Request timeout configuration
+REQUEST_TIMEOUT = int(os.environ.get("REQUEST_TIMEOUT", 120))
 
 
 def load_prompt_template() -> str:
@@ -115,11 +121,12 @@ async def analyze_batch(
         }
         
         try:
-            async with session.post(OPENROUTER_API_URL, json=payload, headers=headers) as response:
+            timeout = aiohttp.ClientTimeout(total=REQUEST_TIMEOUT)
+            async with session.post(OPENROUTER_API_URL, json=payload, headers=headers, timeout=timeout) as response:
                 if response.status == 200:
                     result = await response.json()
                     content = result['choices'][0]['message']['content']
-                    print(f"✓ Batch {batch_num} completed successfully")
+                    logger.debug(f"Batch {batch_num} completed successfully")
                     
                     # Parse the JSON response
                     try:
@@ -141,14 +148,14 @@ async def analyze_batch(
                         else:
                             return [parsed]
                     except json.JSONDecodeError as e:
-                        print(f"Error parsing JSON response for batch {batch_num}: {e}")
+                        logger.warning(f"Error parsing JSON response for batch {batch_num}: {e}")
                         return []
                 else:
                     error_text = await response.text()
-                    print(f"✗ Batch {batch_num} API error (status {response.status}): {error_text[:200]}")
+                    logger.error(f"Batch {batch_num} API error (status {response.status}): {error_text[:200]}")
                     return []
         except Exception as e:
-            print(f"✗ Batch {batch_num} request error: {e}")
+            logger.error(f"Batch {batch_num} request error: {e}")
             return []
 
 
@@ -177,17 +184,17 @@ async def analyze_keywords(
     if not product_details and not product_description:
         raise ValueError("Either product_details or product_description must be provided")
     
-    print(f"Processing {len(keywords)} keywords total")
+    logger.info(f"Processing {len(keywords)} keywords total")
     
     # Create batches
     batches = [keywords[i:i + BATCH_SIZE] for i in range(0, len(keywords), BATCH_SIZE)]
-    print(f"Created {len(batches)} batches of up to {BATCH_SIZE} keywords each")
+    logger.info(f"Created {len(batches)} batches of up to {BATCH_SIZE} keywords each")
     
     # Create semaphore to limit concurrent requests (None = no limit, send all at once)
     semaphore = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS) if MAX_CONCURRENT_REQUESTS > 0 else None
     
     if not semaphore:
-        print("No concurrency limit - sending all requests at once!")
+        logger.warning("No concurrency limit - sending all requests at once!")
     
     # Process all batches concurrently
     async with aiohttp.ClientSession() as session:
@@ -202,7 +209,7 @@ async def analyze_keywords(
                 batch_num=i+1
             ))
         
-        print(f"\nSending {len(tasks)} requests to API...")
+        logger.info(f"Sending {len(tasks)} requests to API...")
         results = await asyncio.gather(*tasks)
     
     # Convert results to KeywordResult objects
@@ -240,7 +247,7 @@ async def analyze_keywords(
     
     # Retry failed keywords if enabled
     if retry_failed and failed_keywords:
-        print(f"\nRetrying {len(failed_keywords)} failed keywords...")
+        logger.info(f"Retrying {len(failed_keywords)} failed keywords...")
         
         # Create smaller batches for retry
         retry_batch_size = 10

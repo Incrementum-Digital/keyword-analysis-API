@@ -16,6 +16,7 @@ load_dotenv()
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY")
 OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
 MODEL = os.environ.get("NEGATIVE_PHRASE_MODEL", "anthropic/claude-sonnet-4")
+REQUEST_TIMEOUT = int(os.environ.get("REQUEST_TIMEOUT", 120))
 PROMPT_PLACEHOLDER = "[Insert your product title, category, key features, target audience here]"
 PROMPT_PATH = Path(__file__).resolve().with_name("negative_phrase_prompt.txt")
 
@@ -75,8 +76,9 @@ async def generate_negative_phrases(product_details: ProductDetails) -> List[str
         "max_tokens": 3000,
     }
 
+    timeout = aiohttp.ClientTimeout(total=REQUEST_TIMEOUT)
     async with aiohttp.ClientSession() as session:
-        async with session.post(OPENROUTER_API_URL, json=payload, headers=headers) as response:
+        async with session.post(OPENROUTER_API_URL, json=payload, headers=headers, timeout=timeout) as response:
             if response.status != 200:
                 error_body = await response.text()
                 raise RuntimeError(

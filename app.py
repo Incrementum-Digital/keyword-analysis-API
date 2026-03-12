@@ -2,12 +2,24 @@
 FastAPI application for keyword analysis
 """
 import asyncio
+import logging
+import sys
 import time
 from typing import List, Optional
-from fastapi import FastAPI, HTTPException, status
+from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from dotenv import load_dotenv
 import os
+
+# Configure logging
+log_level = os.environ.get("LOG_LEVEL", "info").upper()
+logging.basicConfig(
+    level=getattr(logging, log_level, logging.INFO),
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    handlers=[logging.StreamHandler(sys.stdout)]
+)
+logger = logging.getLogger(__name__)
 
 from models import (
     KeywordAnalysisRequest,
@@ -45,6 +57,27 @@ app.add_middleware(
     allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
+
+
+# Global exception handler for unhandled errors
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    """Handle unexpected exceptions gracefully"""
+    logger.error(f"Unhandled exception on {request.method} {request.url.path}: {exc}", exc_info=True)
+    return JSONResponse(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        content={"detail": "An unexpected error occurred. Please try again later."}
+    )
+
+
+# Startup event
+@app.on_event("startup")
+async def startup_event():
+    """Log startup information"""
+    logger.info("Keyword Analysis API starting up...")
+    logger.info(f"Workers: {os.environ.get('WORKERS', 'default')}")
+    logger.info(f"Max concurrent requests: {os.environ.get('MAX_CONCURRENT_REQUESTS', '10')}")
+    logger.info(f"Model: {os.environ.get('OPENROUTER_MODEL', 'google/gemini-2.5-flash-lite')}")
 
 
 @app.get("/")
@@ -90,7 +123,7 @@ async def analyze_keywords_endpoint(request: KeywordAnalysisRequest):
     try:
         if input_type == "asin":
             # Fetch product details from Keepa
-            print(f"Fetching product details for ASIN: {request.asin}")
+            logger.info(f"Fetching product details for ASIN: {request.asin}")
             try:
                 keepa_data = get_basic_product_details(request.asin, request.country)
                 product_details = ProductDetails(**keepa_data)
@@ -106,7 +139,7 @@ async def analyze_keywords_endpoint(request: KeywordAnalysisRequest):
             product_details = ProductDetails(raw_description=product_description)
         
         # Analyze keywords
-        print(f"Analyzing {len(request.keywords)} keywords...")
+        logger.info(f"Analyzing {len(request.keywords)} keywords...")
         analysis_results = await analyze_keywords(
             keywords=request.keywords,
             product_details=product_details if input_type == "asin" else None,
@@ -155,13 +188,13 @@ async def analyze_keywords_endpoint(request: KeywordAnalysisRequest):
             errors=errors if errors else None
         )
         
-        print(f"Analysis complete in {processing_time:.2f} seconds")
+        logger.info(f"Analysis complete in {processing_time:.2f}s - {analyzed_count}/{len(request.keywords)} keywords")
         return response
         
     except HTTPException:
         raise
     except Exception as e:
-        print(f"Error during analysis: {str(e)}")
+        logger.error(f"Error during analysis: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Analysis failed: {str(e)}"
@@ -248,15 +281,15 @@ async def health_check():
 
 if __name__ == "__main__":
     import uvicorn
-    
-    # Run the FastAPI app
-    print("Starting Keyword Analysis API...")
-    print("Documentation available at: http://localhost:8000/docs")
-    print("Health check at: http://localhost:8000/health")
-    
+
+    # Run the FastAPI app (development only)
+    logger.info("Starting Keyword Analysis API (development mode)...")
+    logger.info("Documentation available at: http://localhost:8000/docs")
+    logger.info("Health check at: http://localhost:8000/health")
+
     uvicorn.run(
         app,
         host="0.0.0.0",
-        port=8000,
+        port=int(os.environ.get("PORT", 8000)),
         reload=True
     )
