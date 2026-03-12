@@ -193,6 +193,18 @@ async def analyze_keywords_endpoint(request: KeywordAnalysisRequest):
         
     except HTTPException:
         raise
+    except RuntimeError as e:
+        error_msg = str(e).lower()
+        logger.error(f"Runtime error during analysis: {str(e)}", exc_info=True)
+        if "rate limit" in error_msg:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="Rate limit exceeded. Please try again in 1 minute."
+            )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(e)
+        )
     except Exception as e:
         logger.error(f"Error during analysis: {str(e)}", exc_info=True)
         raise HTTPException(

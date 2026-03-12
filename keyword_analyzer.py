@@ -153,7 +153,13 @@ async def analyze_batch(
                 else:
                     error_text = await response.text()
                     logger.error(f"Batch {batch_num} API error (status {response.status}): {error_text[:200]}")
+                    # Return error info for rate limits so caller can handle
+                    if response.status == 429:
+                        return [{"_error": "rate_limit", "_message": "Rate limit exceeded"}]
                     return []
+        except asyncio.TimeoutError:
+            logger.error(f"Batch {batch_num} timed out after {REQUEST_TIMEOUT}s")
+            return [{"_error": "timeout", "_message": "Request timed out"}]
         except Exception as e:
             logger.error(f"Batch {batch_num} request error: {e}")
             return []
@@ -215,14 +221,26 @@ async def analyze_keywords(
     # Convert results to KeywordResult objects
     keyword_results = []
     failed_keywords = []
-    
-    # Create a mapping of processed keywords
+    rate_limit_hit = False
+    timeout_hit = False
+
+    # Create a mapping of processed keywords and check for errors
     processed_keywords = {}
     for batch_result in results:
         if batch_result:
             for item in batch_result:
-                if 'keyword' in item:
+                # Check for error markers
+                if '_error' in item:
+                    if item['_error'] == 'rate_limit':
+                        rate_limit_hit = True
+                    elif item['_error'] == 'timeout':
+                        timeout_hit = True
+                elif 'keyword' in item:
                     processed_keywords[item['keyword'].lower()] = item
+
+    # If rate limit was hit, raise an exception so the API can return proper status
+    if rate_limit_hit:
+        raise RuntimeError("Rate limit exceeded. Please try again in 1 minute.")
     
     # Map results back to original keywords
     for keyword in keywords:
