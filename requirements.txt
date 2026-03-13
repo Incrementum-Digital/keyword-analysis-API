@@ -14,3 +14,6 @@ gunicorn>=21.2.0
 # Environment and utilities
 python-dotenv>=1.0.0
 requests>=2.31.0
+
+# Error tracking
+sentry-sdk[fastapi]>=2.0.0

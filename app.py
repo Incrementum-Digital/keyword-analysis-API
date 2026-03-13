@@ -12,6 +12,9 @@ from fastapi.responses import JSONResponse
 from dotenv import load_dotenv
 import os
 
+# Load environment variables early
+load_dotenv()
+
 # Configure logging
 log_level = os.environ.get("LOG_LEVEL", "info").upper()
 logging.basicConfig(
@@ -20,6 +23,17 @@ logging.basicConfig(
     handlers=[logging.StreamHandler(sys.stdout)]
 )
 logger = logging.getLogger(__name__)
+
+# Initialize Sentry for error tracking
+SENTRY_DSN = os.environ.get("SENTRY_DSN")
+if SENTRY_DSN:
+    import sentry_sdk
+    sentry_sdk.init(
+        dsn=SENTRY_DSN,
+        environment=os.environ.get("RAILWAY_ENVIRONMENT", "development"),
+        traces_sample_rate=float(os.environ.get("SENTRY_TRACES_SAMPLE_RATE", "0.2")),
+    )
+    logger.info(f"Sentry initialized for environment: {os.environ.get('RAILWAY_ENVIRONMENT', 'development')}")
 
 from models import (
     KeywordAnalysisRequest,
@@ -34,9 +48,6 @@ from keepa_client import get_basic_product_details
 from keyword_analyzer import analyze_keywords
 from root_analysis_service import generate_root_analysis
 from negative_phrase_service import generate_negative_phrases
-
-# Load environment variables
-load_dotenv()
 
 # Create FastAPI app
 app = FastAPI(
@@ -275,10 +286,10 @@ async def health_check():
     # Check if required API keys are configured
     openrouter_configured = bool(os.environ.get("OPENROUTER_API_KEY"))
     keepa_configured = bool(os.environ.get("KEEPA_API_KEY")) and os.environ.get("KEEPA_API_KEY") != "your_keepa_api_key_here"
-    
+
     max_concurrent = os.environ.get("MAX_CONCURRENT_REQUESTS", "0")
     concurrency_desc = "unlimited (all at once)" if max_concurrent == "0" else max_concurrent
-    
+
     return {
         "status": "healthy",
         "configuration": {
@@ -289,6 +300,35 @@ async def health_check():
             "max_concurrent_requests": concurrency_desc
         }
     }
+
+
+@app.get("/health/sentry-test")
+async def test_sentry(trigger_error: bool = False):
+    """
+    Test Sentry integration.
+
+    - GET /health/sentry-test - Shows Sentry config debug info
+    - GET /health/sentry-test?trigger_error=true - Triggers a test error
+
+    DELETE THIS ENDPOINT AFTER TESTING
+    """
+    import sentry_sdk
+
+    # Debug info
+    debug_info = {
+        "sentry_dsn_configured": bool(os.environ.get("SENTRY_DSN")),
+        "sentry_environment": os.environ.get("RAILWAY_ENVIRONMENT", "development"),
+        "sentry_sdk_initialized": sentry_sdk.is_initialized(),
+        "sentry_hub_client": str(sentry_sdk.Hub.current.client),
+    }
+
+    if trigger_error:
+        # Send a test message first
+        sentry_sdk.capture_message("Sentry test message from keyword-analysis-API")
+        # Then raise an exception
+        raise Exception("Sentry test error - keyword-analysis-API")
+
+    return debug_info
 
 
 if __name__ == "__main__":
