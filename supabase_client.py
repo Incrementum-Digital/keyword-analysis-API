@@ -9,8 +9,8 @@ from supabase import create_client, Client
 
 logger = logging.getLogger(__name__)
 
-# Environment variables
-SUPABASE_URL = os.environ.get("SUPABASE_URL")
+# Environment variables (check both naming conventions)
+SUPABASE_URL = os.environ.get("SUPABASE_URL") or os.environ.get("NEXT_PUBLIC_SUPABASE_URL")
 SUPABASE_SERVICE_ROLE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
 
 _client: Optional[Client] = None
