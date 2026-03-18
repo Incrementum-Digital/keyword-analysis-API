@@ -66,6 +66,16 @@ DEFAULT_IRREGULAR_SINGULARS: Dict[str, str] = {
     "horsemen": "horseman",
     "countrymen": "countryman",
     # Words ending in 's' that are NOT plurals (should not be singularized)
+    # Brand names
+    "asus": "asus",
+    "adidas": "adidas",
+    "levis": "levis",
+    "mercedes": "mercedes",
+    "lexus": "lexus",
+    "prius": "prius",
+    "airbus": "airbus",
+    "costplus": "costplus",
+    # Common words
     "christmas": "christmas",
     "xmas": "xmas",
     "series": "series",
