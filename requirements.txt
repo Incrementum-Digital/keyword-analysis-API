@@ -1,6 +1,8 @@
 # Core dependencies
 pandas>=2.0.0
+openpyxl>=3.1.0
 aiohttp>=3.9.0
+httpx>=0.27.0
 
 # FastAPI and related
 fastapi>=0.104.0
@@ -14,6 +16,9 @@ gunicorn>=21.2.0
 # Environment and utilities
 python-dotenv>=1.0.0
 requests>=2.31.0
+
+# Database
+supabase>=2.0.0
 
 # Error tracking
 sentry-sdk[fastapi]>=2.0.0

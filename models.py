@@ -183,3 +183,49 @@ class RootAnalysisResponse(BaseModel):
     total_keywords: int
     results: List[RootAnalysisItem]
     auto_config_updates: AutoConfigUpdates
+
+
+# ============================================================================
+# Root Validation Models (for comparing with Data Dive)
+# ============================================================================
+
+
+class RootComparisonRequest(BaseModel):
+    """Request to compare local root analysis with Data Dive."""
+    niche_id: str = Field(..., min_length=1, description="Data Dive niche ID")
+
+
+class RootComparisonSummary(BaseModel):
+    """Summary of root comparison results."""
+    match_rate: float = Field(..., description="Percentage of matching roots (0-100)")
+    total_datadive_roots: int
+    total_local_roots: int
+    exact_matches: int
+    mismatches: int
+    only_in_datadive: int
+    only_in_local: int
+    passed: bool = Field(..., description="True if match_rate >= 95%")
+
+
+class RootMismatch(BaseModel):
+    """Details of a mismatched root."""
+    root: str
+    datadive: Dict[str, Any]
+    local: Dict[str, Any]
+    differences: Dict[str, bool]
+
+
+class RootOnlyItem(BaseModel):
+    """Root that exists only in one source."""
+    root: str
+    frequency: int
+    search_volume: Optional[int] = Field(None, alias="broadSearchVolume")
+
+
+class RootComparisonResponse(BaseModel):
+    """Response from root comparison endpoint."""
+    summary: RootComparisonSummary
+    matches: List[str]
+    mismatches: List[RootMismatch]
+    only_datadive: List[Dict[str, Any]]
+    only_local: List[Dict[str, Any]]

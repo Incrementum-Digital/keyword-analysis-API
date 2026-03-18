@@ -43,11 +43,16 @@ from models import (
     RootAnalysisRequest,
     RootAnalysisResponse,
     NegativePhraseRequest,
+    RootComparisonRequest,
+    RootComparisonResponse,
 )
 from keepa_client import get_basic_product_details
 from keyword_analyzer import analyze_keywords
 from root_analysis_service import generate_root_analysis
 from negative_phrase_service import generate_negative_phrases
+from datadive_client import DataDiveClient, compare_root_analysis
+from bulk_sheets_router import router as bulk_sheets_router
+from supabase_client import is_supabase_configured
 
 # Create FastAPI app
 app = FastAPI(
@@ -65,9 +70,12 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
     allow_credentials=True,
-    allow_methods=["GET", "POST"],
+    allow_methods=["GET", "POST", "DELETE"],
     allow_headers=["*"],
 )
+
+# Include routers
+app.include_router(bulk_sheets_router)
 
 
 # Global exception handler for unhandled errors
@@ -101,6 +109,12 @@ async def root():
             "POST /analyze-keywords": "Analyze keywords for product relevance",
             "POST /root-analysis": "Generate normalized root keywords from CSV data",
             "POST /negative-phrase": "Generate Amazon PPC negative keyword list",
+            "POST /validation/compare-roots": "Compare local root analysis with Data Dive",
+            "POST /bulk-sheets/upload": "Upload Amazon PPC bulk sheet",
+            "GET /bulk-sheets": "List user's bulk sheets",
+            "GET /bulk-sheets/{id}/targets": "Get targets from bulk sheet",
+            "DELETE /bulk-sheets/{id}": "Delete bulk sheet",
+            "POST /bulk-sheets/check-targeting": "Check keyword targeting status",
         },
         "documentation": "/docs"
     }
@@ -280,12 +294,94 @@ async def negative_phrase_endpoint(request: NegativePhraseRequest) -> List[str]:
     return phrases
 
 
+@app.post("/validation/compare-roots", response_model=RootComparisonResponse)
+async def compare_roots_endpoint(request: RootComparisonRequest):
+    """
+    Compare local root keyword analysis with Data Dive.
+
+    Fetches the master keyword list and roots from Data Dive for the given niche,
+    runs the local root analysis algorithm on the same keywords, and produces
+    a detailed comparison report.
+
+    This endpoint is useful for validating that the local algorithm matches
+    Data Dive's output, ensuring consistent campaign grouping behavior.
+    """
+    try:
+        # Initialize Data Dive client
+        client = DataDiveClient()
+
+        # Fetch data from Data Dive
+        logger.info(f"Fetching Data Dive roots for niche: {request.niche_id}")
+        dd_roots_data = await client.get_niche_roots(request.niche_id)
+        dd_mkl_data = await client.get_master_keyword_list(request.niche_id)
+
+        # Extract roots from Data Dive response
+        dd_roots = dd_roots_data.get("roots", [])
+        if not dd_roots:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"No roots found for niche: {request.niche_id}"
+            )
+
+        # Extract keywords for local analysis
+        dd_keywords = dd_mkl_data.get("keywords", [])
+        if not dd_keywords:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"No keywords found for niche: {request.niche_id}"
+            )
+
+        # Prepare keyword rows for local analysis
+        keyword_rows = [
+            (kw.get("keyword", ""), kw.get("searchVolume", 0))
+            for kw in dd_keywords
+            if kw.get("keyword")
+        ]
+
+        if not keyword_rows:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No valid keywords to analyze"
+            )
+
+        # Run local root analysis
+        logger.info(f"Running local root analysis on {len(keyword_rows)} keywords")
+        local_result = generate_root_analysis(keyword_rows, mode="full")
+        local_roots = local_result.get("results", [])
+
+        # Compare results
+        comparison = compare_root_analysis(dd_roots, local_roots)
+
+        logger.info(
+            f"Root comparison complete: {comparison['summary']['match_rate']}% match rate, "
+            f"passed={comparison['summary']['passed']}"
+        )
+
+        return RootComparisonResponse(**comparison)
+
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Root comparison failed: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Root comparison failed: {str(e)}"
+        )
+
+
 @app.get("/health")
 async def health_check():
     """Health check endpoint"""
     # Check if required API keys are configured
     openrouter_configured = bool(os.environ.get("OPENROUTER_API_KEY"))
     keepa_configured = bool(os.environ.get("KEEPA_API_KEY")) and os.environ.get("KEEPA_API_KEY") != "your_keepa_api_key_here"
+    datadive_configured = bool(os.environ.get("DATADIVE_API_KEY"))
+    supabase_configured = is_supabase_configured()
 
     max_concurrent = os.environ.get("MAX_CONCURRENT_REQUESTS", "0")
     concurrency_desc = "unlimited (all at once)" if max_concurrent == "0" else max_concurrent
@@ -295,6 +391,8 @@ async def health_check():
         "configuration": {
             "openrouter_api_key": "configured" if openrouter_configured else "missing",
             "keepa_api_key": "configured" if keepa_configured else "missing",
+            "datadive_api_key": "configured" if datadive_configured else "missing",
+            "supabase": "configured" if supabase_configured else "missing",
             "model": os.environ.get("OPENROUTER_MODEL", "google/gemini-2.5-flash-lite"),
             "batch_size": os.environ.get("BATCH_SIZE", 30),
             "max_concurrent_requests": concurrency_desc
