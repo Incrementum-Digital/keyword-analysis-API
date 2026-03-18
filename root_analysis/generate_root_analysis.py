@@ -26,6 +26,7 @@ DEFAULT_STOPWORDS: Set[str] = {
     "the",
     "a",
     "an",
+    "in",
     "s",  # stray 's' from possessives
     "mega",
 }
