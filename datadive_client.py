@@ -69,7 +69,8 @@ class DataDiveClient:
             if "error" in result:
                 raise Exception(f"Data Dive API error: {result['error']}")
 
-            return result.get("data", [{}])[0] if result.get("data") else result
+            # Data is an object with keywords, roots, etc. - not an array
+            return result.get("data", {})
 
     async def get_master_keyword_list(self, niche_id: str) -> Dict[str, Any]:
         """
@@ -98,7 +99,8 @@ class DataDiveClient:
             if "error" in result:
                 raise Exception(f"Data Dive API error: {result['error']}")
 
-            return result.get("data", [{}])[0] if result.get("data") else result
+            # Data is an object with keywords array - not an array itself
+            return result.get("data", {})
 
     async def list_niches(
         self, page: int = 1, page_size: int = 20
