@@ -303,6 +303,8 @@ def tokenize(term: str, irregular_map: Dict[str, str]) -> Tuple[List[str], List[
         return placeholder
 
     prepped = DECIMAL_PATTERN.sub(replace_decimal, lowered)
+    # Remove possessive 's (e.g., "men's" -> "men", "kid's" -> "kid")
+    prepped = re.sub(r"'s\b", "", prepped)
     cleaned = NON_WORD_RE.sub(" ", prepped).strip()
     if not cleaned:
         return [], []
