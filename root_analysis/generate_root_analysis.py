@@ -15,18 +15,6 @@ import sys
 from pathlib import Path
 from typing import Dict, Iterable, List, Sequence, Set, Tuple
 
-import nltk
-from nltk.stem import WordNetLemmatizer
-
-# Download required NLTK data (only downloads if not already present)
-try:
-    nltk.data.find('corpora/wordnet')
-except LookupError:
-    nltk.download('wordnet', quiet=True)
-
-# Initialize lemmatizer
-_lemmatizer = WordNetLemmatizer()
-
 # --------- Defaults & configuration handling ---------------------------------
 
 DEFAULT_STOPWORDS: Set[str] = {
@@ -55,7 +43,7 @@ DEFAULT_IRREGULAR_SINGULARS: Dict[str, str] = {
     "lbs": "lb",
     "iris": "iris",
     "homeplus": "homeplus",
-    # Compound irregular plurals (NLTK doesn't handle compound words)
+    # Compound irregular plurals
     "snowmen": "snowman",
     "snowmens": "snowman",
     "gentlemen": "gentleman",
@@ -77,6 +65,129 @@ DEFAULT_IRREGULAR_SINGULARS: Dict[str, str] = {
     "watchmen": "watchman",
     "horsemen": "horseman",
     "countrymen": "countryman",
+    # Words ending in 's' that are NOT plurals (should not be singularized)
+    "christmas": "christmas",
+    "xmas": "xmas",
+    "series": "series",
+    "species": "species",
+    "news": "news",
+    "means": "means",
+    "plus": "plus",
+    "bus": "bus",
+    "lens": "lens",
+    "canvas": "canvas",
+    "status": "status",
+    "virus": "virus",
+    "bonus": "bonus",
+    "focus": "focus",
+    "campus": "campus",
+    "citrus": "citrus",
+    "radius": "radius",
+    "genius": "genius",
+    "census": "census",
+    "cactus": "cactus",
+    "fungus": "fungus",
+    "mucus": "mucus",
+    "nexus": "nexus",
+    "sinus": "sinus",
+    "lotus": "lotus",
+    "hiatus": "hiatus",
+    "fetus": "fetus",
+    "apparatus": "apparatus",
+    "stimulus": "stimulus",
+    "consensus": "consensus",
+    "corpus": "corpus",
+    "compass": "compass",
+    "surplus": "surplus",
+    "tennis": "tennis",
+    "axis": "axis",
+    "basis": "basis",
+    "oasis": "oasis",
+    "crisis": "crisis",
+    "thesis": "thesis",
+    "pelvis": "pelvis",
+    "cannabis": "cannabis",
+    "analysis": "analysis",
+    "diagnosis": "diagnosis",
+    "emphasis": "emphasis",
+    "hypothesis": "hypothesis",
+    "synthesis": "synthesis",
+    "paralysis": "paralysis",
+    "metamorphosis": "metamorphosis",
+    "gas": "gas",
+    "atlas": "atlas",
+    "chaos": "chaos",
+    "ethos": "ethos",
+    "pathos": "pathos",
+    "cosmos": "cosmos",
+    "rhinoceros": "rhinoceros",
+    "lass": "lass",
+    "lass": "lass",
+    "class": "class",
+    "glass": "glass",
+    "grass": "grass",
+    "brass": "brass",
+    "mass": "mass",
+    "pass": "pass",
+    "boss": "boss",
+    "loss": "loss",
+    "moss": "moss",
+    "toss": "toss",
+    "cross": "cross",
+    "gross": "gross",
+    "dress": "dress",
+    "press": "press",
+    "stress": "stress",
+    "bless": "bless",
+    "chess": "chess",
+    "mess": "mess",
+    "less": "less",
+    "guess": "guess",
+    "success": "success",
+    "access": "access",
+    "process": "process",
+    "progress": "progress",
+    "address": "address",
+    "express": "express",
+    "compress": "compress",
+    "impress": "impress",
+    "possess": "possess",
+    "business": "business",
+    "fitness": "fitness",
+    "illness": "illness",
+    "wellness": "wellness",
+    "darkness": "darkness",
+    "weakness": "weakness",
+    "kindness": "kindness",
+    "happiness": "happiness",
+    "sadness": "sadness",
+    "madness": "madness",
+    "awareness": "awareness",
+    "wireless": "wireless",
+    "stainless": "stainless",
+    "seamless": "seamless",
+    "cordless": "cordless",
+    "endless": "endless",
+    "harmless": "harmless",
+    "homeless": "homeless",
+    "helpless": "helpless",
+    "hopeless": "hopeless",
+    "useless": "useless",
+    "careless": "careless",
+    "priceless": "priceless",
+    "timeless": "timeless",
+    "flawless": "flawless",
+    "effortless": "effortless",
+    "weightless": "weightless",
+    "breathless": "breathless",
+    "relentless": "relentless",
+    "restless": "restless",
+    "fearless": "fearless",
+    "odorless": "odorless",
+    "colorless": "colorless",
+    "sugarless": "sugarless",
+    "waterless": "waterless",
+    "powerless": "powerless",
 }
 
 # Irregulars that we can recognise automatically even if they are not yet in
@@ -141,21 +252,32 @@ def save_config(config: Dict[str, object]) -> None:
 # --------- Token normalisation helpers ---------------------------------------
 
 def singularize(token: str, irregular_map: Dict[str, str]) -> str:
-    """Convert a plural word to its singular form using NLTK WordNetLemmatizer.
+    """Convert a plural word to its singular form using rule-based approach.
 
-    The lemmatizer properly handles:
-    - Regular plurals (dogs → dog, boxes → box)
-    - Words ending in 's' that are NOT plurals (christmas, series, news)
-    - Most irregular plurals (children → child, mice → mouse)
-
-    The irregular_map is still checked first for custom overrides.
+    Matches DataDive's singularization behavior:
+    - Uses irregular_map for exceptions (christmas, xmas, series, etc.)
+    - Applies standard English plural rules for everything else
     """
     if token in irregular_map:
         return irregular_map[token]
 
-    # Use NLTK's WordNetLemmatizer for proper singularization
-    # The lemmatizer is context-aware and won't incorrectly stem words like "christmas"
-    candidate = _lemmatizer.lemmatize(token, pos='n')  # 'n' for noun
+    candidate = token
+    if candidate.endswith("ies") and len(candidate) > 3:
+        candidate = candidate[:-3] + "y"
+    elif candidate.endswith("ses") and len(candidate) > 3:
+        candidate = candidate[:-2]
+    elif candidate.endswith("xes") and len(candidate) > 3:
+        candidate = candidate[:-2]
+    elif candidate.endswith("zes") and len(candidate) > 3:
+        candidate = candidate[:-2]
+    elif candidate.endswith("ches") and len(candidate) > 3:
+        candidate = candidate[:-2]
+    elif candidate.endswith("shes") and len(candidate) > 3:
+        candidate = candidate[:-2]
+    elif candidate.endswith("oes") and len(candidate) > 3:
+        candidate = candidate[:-2]
+    elif candidate.endswith("s") and len(candidate) > 3 and not candidate.endswith("ss"):
+        candidate = candidate[:-1]
 
     return irregular_map.get(candidate, candidate)
 
