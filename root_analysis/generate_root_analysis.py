@@ -26,6 +26,16 @@ DEFAULT_STOPWORDS: Set[str] = {
     "the",
     "a",
     "an",
+    "in",
+    "to",
+    "is",
+    "it",
+    "at",
+    "by",
+    "or",
+    "as",
+    "be",
+    "s",  # stray 's' from possessives
     "mega",
 }
 
@@ -304,7 +314,8 @@ def tokenize(term: str, irregular_map: Dict[str, str]) -> Tuple[List[str], List[
 
     prepped = DECIMAL_PATTERN.sub(replace_decimal, lowered)
     # Remove possessive 's (e.g., "men's" -> "men", "kid's" -> "kid")
-    prepped = re.sub(r"'s\b", "", prepped)
+    # Handle different apostrophe characters: ' (straight), ' (curly), ʼ (modifier)
+    prepped = re.sub(r"['ʼ']s\b", "", prepped)
     cleaned = NON_WORD_RE.sub(" ", prepped).strip()
     if not cleaned:
         return [], []
