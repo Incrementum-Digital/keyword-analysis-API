@@ -22,3 +22,6 @@ supabase>=2.0.0
 
 # Error tracking
 sentry-sdk[fastapi]>=2.0.0
+
+# NLP
+nltk>=3.8.0

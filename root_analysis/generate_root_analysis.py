@@ -15,6 +15,18 @@ import sys
 from pathlib import Path
 from typing import Dict, Iterable, List, Sequence, Set, Tuple
 
+import nltk
+from nltk.stem import WordNetLemmatizer
+
+# Download required NLTK data (only downloads if not already present)
+try:
+    nltk.data.find('corpora/wordnet')
+except LookupError:
+    nltk.download('wordnet', quiet=True)
+
+# Initialize lemmatizer
+_lemmatizer = WordNetLemmatizer()
+
 # --------- Defaults & configuration handling ---------------------------------
 
 DEFAULT_STOPWORDS: Set[str] = {
@@ -43,6 +55,28 @@ DEFAULT_IRREGULAR_SINGULARS: Dict[str, str] = {
     "lbs": "lb",
     "iris": "iris",
     "homeplus": "homeplus",
+    # Compound irregular plurals (NLTK doesn't handle compound words)
+    "snowmen": "snowman",
+    "snowmens": "snowman",
+    "gentlemen": "gentleman",
+    "businessmen": "businessman",
+    "salesmen": "salesman",
+    "firemen": "fireman",
+    "policemen": "policeman",
+    "fishermen": "fisherman",
+    "sportsmen": "sportsman",
+    "workmen": "workman",
+    "craftsmen": "craftsman",
+    "spokesmen": "spokesman",
+    "chairmen": "chairman",
+    "congressmen": "congressman",
+    "servicemen": "serviceman",
+    "newsmen": "newsman",
+    "stuntmen": "stuntman",
+    "doormen": "doorman",
+    "watchmen": "watchman",
+    "horsemen": "horseman",
+    "countrymen": "countryman",
 }
 
 # Irregulars that we can recognise automatically even if they are not yet in
@@ -107,26 +141,21 @@ def save_config(config: Dict[str, object]) -> None:
 # --------- Token normalisation helpers ---------------------------------------
 
 def singularize(token: str, irregular_map: Dict[str, str]) -> str:
+    """Convert a plural word to its singular form using NLTK WordNetLemmatizer.
+
+    The lemmatizer properly handles:
+    - Regular plurals (dogs → dog, boxes → box)
+    - Words ending in 's' that are NOT plurals (christmas, series, news)
+    - Most irregular plurals (children → child, mice → mouse)
+
+    The irregular_map is still checked first for custom overrides.
+    """
     if token in irregular_map:
         return irregular_map[token]
 
-    candidate = token
-    if candidate.endswith("ies") and len(candidate) > 3:
-        candidate = candidate[:-3] + "y"
-    elif candidate.endswith("ses") and len(candidate) > 3:
-        candidate = candidate[:-2]
-    elif candidate.endswith("xes") and len(candidate) > 3:
-        candidate = candidate[:-2]
-    elif candidate.endswith("zes") and len(candidate) > 3:
-        candidate = candidate[:-2]
-    elif candidate.endswith("ches") and len(candidate) > 3:
-        candidate = candidate[:-2]
-    elif candidate.endswith("shes") and len(candidate) > 3:
-        candidate = candidate[:-2]
-    elif candidate.endswith("oes") and len(candidate) > 3:
-        candidate = candidate[:-2]
-    elif candidate.endswith("s") and len(candidate) > 3 and not candidate.endswith("ss"):
-        candidate = candidate[:-1]
+    # Use NLTK's WordNetLemmatizer for proper singularization
+    # The lemmatizer is context-aware and won't incorrectly stem words like "christmas"
+    candidate = _lemmatizer.lemmatize(token, pos='n')  # 'n' for noun
 
     return irregular_map.get(candidate, candidate)
 
