@@ -114,7 +114,7 @@ async def upload_bulk_sheet(
     try:
         # Delete existing bulk sheet for this user+account (upsert behavior)
         # Due to UNIQUE constraint, we delete first then insert
-        delete_result = supabase.schema("ppc_builder").table("bulk_sheets").delete().match({
+        delete_result = supabase.schema("keyword_analysis").table("bulk_sheets").delete().match({
             "user_id": user_id,
             "account_name": account_name
         }).execute()
@@ -130,7 +130,7 @@ async def upload_bulk_sheet(
             "row_count": parse_result.row_count,
         }
 
-        insert_result = supabase.schema("ppc_builder").table("bulk_sheets").insert(
+        insert_result = supabase.schema("keyword_analysis").table("bulk_sheets").insert(
             bulk_sheet_data
         ).execute()
 
@@ -164,7 +164,7 @@ async def upload_bulk_sheet(
             batch_size = 1000
             for i in range(0, len(targets_data), batch_size):
                 batch = targets_data[i:i + batch_size]
-                supabase.schema("ppc_builder").table("bulk_sheet_targets").insert(batch).execute()
+                supabase.schema("keyword_analysis").table("bulk_sheet_targets").insert(batch).execute()
 
             logger.info(f"Inserted {len(targets_data)} targets for bulk sheet {bulk_sheet_id}")
 
@@ -200,7 +200,7 @@ async def list_bulk_sheets(user_id: str):
         )
 
     try:
-        result = supabase.schema("ppc_builder").table("bulk_sheets").select(
+        result = supabase.schema("keyword_analysis").table("bulk_sheets").select(
             "id, account_name, marketplace, file_name, uploaded_at, row_count"
         ).eq("user_id", user_id).order("uploaded_at", desc=True).execute()
 
@@ -250,7 +250,7 @@ async def get_bulk_sheet_targets(
 
     try:
         # Verify user owns this bulk sheet
-        ownership = supabase.schema("ppc_builder").table("bulk_sheets").select(
+        ownership = supabase.schema("keyword_analysis").table("bulk_sheets").select(
             "id"
         ).eq("id", str(bulk_sheet_id)).eq("user_id", user_id).execute()
 
@@ -261,7 +261,7 @@ async def get_bulk_sheet_targets(
             )
 
         # Build query
-        query = supabase.schema("ppc_builder").table("bulk_sheet_targets").select(
+        query = supabase.schema("keyword_analysis").table("bulk_sheet_targets").select(
             "campaign_name, ad_group_name, keyword, keyword_normalized, match_type, targeting_type, state, bid"
         ).eq("bulk_sheet_id", str(bulk_sheet_id))
 
@@ -317,7 +317,7 @@ async def delete_bulk_sheet(bulk_sheet_id: UUID, user_id: str):
 
     try:
         # Delete bulk sheet (CASCADE will delete targets)
-        result = supabase.schema("ppc_builder").table("bulk_sheets").delete().match({
+        result = supabase.schema("keyword_analysis").table("bulk_sheets").delete().match({
             "id": str(bulk_sheet_id),
             "user_id": user_id
         }).execute()
@@ -357,7 +357,7 @@ async def check_targeting(request: TargetingCheckRequest, user_id: str = ""):
 
     try:
         # Verify user owns this bulk sheet
-        ownership = supabase.schema("ppc_builder").table("bulk_sheets").select(
+        ownership = supabase.schema("keyword_analysis").table("bulk_sheets").select(
             "id"
         ).eq("id", str(request.bulk_sheet_id)).eq("user_id", user_id).execute()
 
@@ -371,7 +371,7 @@ async def check_targeting(request: TargetingCheckRequest, user_id: str = ""):
         normalized_keywords = [normalize_keyword(kw) for kw in request.keywords]
 
         # Query targets matching these keywords
-        result = supabase.schema("ppc_builder").table("bulk_sheet_targets").select(
+        result = supabase.schema("keyword_analysis").table("bulk_sheet_targets").select(
             "keyword_normalized, match_type, campaign_name"
         ).eq("bulk_sheet_id", str(request.bulk_sheet_id)).in_(
             "keyword_normalized", normalized_keywords
