@@ -26,15 +26,6 @@ DEFAULT_STOPWORDS: Set[str] = {
     "the",
     "a",
     "an",
-    "in",
-    "to",
-    "is",
-    "it",
-    "at",
-    "by",
-    "or",
-    "as",
-    "be",
     "s",  # stray 's' from possessives
     "mega",
 }
