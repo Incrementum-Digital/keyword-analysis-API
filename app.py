@@ -315,12 +315,12 @@ async def compare_roots_endpoint(request: RootComparisonRequest):
         dd_roots_data = await client.get_niche_roots(request.niche_id)
         dd_mkl_data = await client.get_master_keyword_list(request.niche_id)
 
-        # Extract roots from Data Dive response
-        dd_roots = dd_roots_data.get("roots", [])
+        # Extract normalized roots from Data Dive response (MKL normalized roots)
+        dd_roots = dd_roots_data.get("normalizedRoots", [])
         if not dd_roots:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"No roots found for niche: {request.niche_id}"
+                detail=f"No normalizedRoots found for niche: {request.niche_id}"
             )
 
         # Extract keywords for local analysis
