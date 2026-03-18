@@ -77,6 +77,8 @@ DEFAULT_IRREGULAR_SINGULARS: Dict[str, str] = {
     "prius": "prius",
     "airbus": "airbus",
     "costplus": "costplus",
+    # Foreign/Portuguese words
+    "braceletes": "braceletes",
     # Common words
     "christmas": "christmas",
     "xmas": "xmas",
