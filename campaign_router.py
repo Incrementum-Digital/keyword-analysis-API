@@ -21,10 +21,34 @@ from campaign_models import (
     ExportBulkSheetRequest,
     ExportSummary,
     GenerateCampaignsRequest,
+    NormGroup,
     NormalizeResponse,
+    NormVariant,
     SaveNormalizationRequest,
     UpdateCampaignRequest,
     UpdateCampaignSessionRequest,
+)
+from normalizer import RawKeyword, normalize_keywords, groups_to_dict
+from campaign_generator import (
+    Campaign as GenCampaign,
+    GenerateInput,
+    Keyword as GenKeyword,
+    MatchTypeConfig as GenMatchTypeConfig,
+    SVTier as GenSVTier,
+    generate_campaigns as run_campaign_generator,
+    detect_roots_from_keywords,
+)
+from root_detector import RootGroup
+from naming_engine import NamingTemplate as GenNamingTemplate
+from bulk_sheet_exporter import (
+    Campaign as ExportCampaign,
+    Keyword as ExportKeyword,
+    CampaignOverride,
+    CampaignNegatives,
+    ExportOptions,
+    generate_bulk_sheet,
+    workbook_to_bytes,
+    get_export_summary,
 )
 from supabase_client import get_supabase_client
 
@@ -326,7 +350,7 @@ async def generate_normalization(session_id: UUID, user_id: str):
 
         # Get keywords from the keyword analysis results
         keywords_result = supabase.schema("keyword_analysis").table("results").select(
-            "keyword, search_volume"
+            "id, keyword, search_volume"
         ).eq("session_id", keyword_session_id).execute()
 
         if not keywords_result.data:
@@ -335,12 +359,44 @@ async def generate_normalization(session_id: UUID, user_id: str):
                 detail="No keywords found in keyword session"
             )
 
-        # TODO: Implement normalization algorithm
-        # For now, return empty groups - this will be implemented in Phase 2
+        # Convert to RawKeyword format for normalizer
+        raw_keywords = [
+            RawKeyword(
+                id=kw["id"],
+                text=kw["keyword"],
+                search_volume=kw.get("search_volume", 0) or 0
+            )
+            for kw in keywords_result.data
+        ]
+
+        # Run normalization algorithm
+        norm_groups = normalize_keywords(raw_keywords)
+
+        # Convert to response format
+        groups = [
+            NormGroup(
+                id=g.id,
+                normalized_text=g.normalized_text,
+                combined_search_volume=g.combined_search_volume,
+                variants=[
+                    NormVariant(
+                        keyword=v.keyword.text,
+                        keyword_id=v.keyword.id,
+                        search_volume=v.keyword.search_volume,
+                        reason=v.reason,
+                        is_merged=v.is_merged
+                    )
+                    for v in g.variants
+                ],
+                is_included=g.is_included
+            )
+            for g in norm_groups
+        ]
+
         return NormalizeResponse(
-            groups=[],
+            groups=groups,
             total_keywords=len(keywords_result.data),
-            total_groups=0,
+            total_groups=len(groups),
         )
 
     except HTTPException:
@@ -419,6 +475,81 @@ async def save_normalization(
         )
 
 
+@router.get("/{session_id}/roots")
+async def get_root_groups(session_id: UUID, user_id: str):
+    """
+    Detect and return root keyword groups for a session.
+
+    Root groups are common n-grams that appear across multiple keywords.
+    Used for organizing keywords into campaigns.
+    """
+    try:
+        supabase = get_supabase_client()
+    except RuntimeError as e:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Database service unavailable"
+        )
+
+    try:
+        # Verify session ownership
+        session = supabase.schema("keyword_analysis").table("campaign_sessions").select(
+            "keyword_session_id"
+        ).eq("id", str(session_id)).eq("user_id", user_id).execute()
+
+        if not session.data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Campaign session not found"
+            )
+
+        keyword_session_id = session.data[0]["keyword_session_id"]
+
+        # Get keywords from keyword analysis results
+        keywords_result = supabase.schema("keyword_analysis").table("results").select(
+            "id, keyword, search_volume"
+        ).eq("session_id", keyword_session_id).execute()
+
+        if not keywords_result.data:
+            return {"roots": [], "total": 0}
+
+        # Convert to generator Keyword format
+        gen_keywords = [
+            GenKeyword(
+                id=kw["id"],
+                normalized_text=kw["keyword"],
+                search_volume=kw.get("search_volume", 0) or 0,
+                original_text=kw["keyword"]
+            )
+            for kw in keywords_result.data
+        ]
+
+        # Detect roots
+        root_groups = detect_roots_from_keywords(gen_keywords)
+
+        # Convert to response format
+        roots = [
+            {
+                "name": r.name,
+                "frequency": r.frequency,
+                "total_sv": r.total_sv,
+                "keyword_count": len(r.keyword_ids),
+            }
+            for r in root_groups
+        ]
+
+        return {"roots": roots, "total": len(roots)}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error detecting roots: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to detect roots: {str(e)}"
+        )
+
+
 # ============================================================================
 # Campaign Generation Endpoints
 # ============================================================================
@@ -457,12 +588,155 @@ async def generate_campaigns(
                 detail="Campaign session not found"
             )
 
-        # TODO: Implement campaign generation algorithm
-        # For now, return empty list - this will be implemented in Phase 3
+        keyword_session_id = session.data[0]["keyword_session_id"]
+
+        # Get keywords from keyword analysis results
+        keywords_result = supabase.schema("keyword_analysis").table("results").select(
+            "id, keyword, search_volume"
+        ).eq("session_id", keyword_session_id).execute()
+
+        if not keywords_result.data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="No keywords found in keyword session"
+            )
+
+        # Convert to generator Keyword format
+        gen_keywords = [
+            GenKeyword(
+                id=kw["id"],
+                normalized_text=kw["keyword"],
+                search_volume=kw.get("search_volume", 0) or 0,
+                original_text=kw["keyword"]
+            )
+            for kw in keywords_result.data
+        ]
+
+        # Detect roots from keywords
+        root_groups = detect_roots_from_keywords(gen_keywords)
+
+        # Convert config to generator format
+        match_type_configs = {}
+        for mt, mtc in (request.config.match_type_configs or {}).items():
+            sv_tiers = [
+                GenSVTier(
+                    id=tier.id,
+                    label=tier.label,
+                    min_sv=tier.min_sv,
+                    max_sv=tier.max_sv,
+                    max_keywords=tier.max_keywords
+                )
+                for tier in (mtc.sv_tiers or [])
+            ]
+            match_type_configs[mt.lower()] = GenMatchTypeConfig(
+                enabled=mtc.enabled,
+                sv_tiers=sv_tiers,
+                daily_budget=mtc.daily_budget,
+                default_bid=mtc.default_bid,
+                keyword_bid=mtc.keyword_bid,
+                bidding_strategy=mtc.bidding_strategy,
+                start_date=mtc.start_date,
+                status=mtc.status,
+            )
+
+        # Build targeting selections (all keywords selected for all enabled match types)
+        targeting_selections = {}
+        for kw in gen_keywords:
+            targeting_selections[kw.id] = [
+                mt for mt, cfg in match_type_configs.items()
+                if cfg.enabled and mt in ['exact', 'phrase', 'broad']
+            ]
+
+        # Build naming template
+        naming_template = GenNamingTemplate(
+            tokens=request.config.naming_template.tokens or ["SKU", "SP", "MATCH", "ROOT"],
+            separator=request.config.naming_template.separator or "_",
+            custom_tokens=request.config.naming_template.custom_tokens or {}
+        )
+
+        # Generate campaigns
+        gen_input = GenerateInput(
+            keywords=gen_keywords,
+            targeting_selections=targeting_selections,
+            match_type_configs=match_type_configs,
+            root_groups=root_groups,
+            selected_roots_by_match_type=request.selected_roots or {},
+            solo_keyword_ids=request.solo_keyword_ids or [],
+            include_ungrouped=request.include_ungrouped,
+            sku=request.config.sku or "",
+            naming_template=naming_template,
+        )
+
+        generated_campaigns = run_campaign_generator(gen_input)
+
+        # Delete existing campaigns for this session
+        supabase.schema("keyword_analysis").table("campaigns").delete().eq(
+            "campaign_session_id", str(session_id)
+        ).execute()
+
+        # Insert generated campaigns
+        campaigns_response = []
+        for camp in generated_campaigns:
+            # Insert campaign
+            campaign_data = {
+                "campaign_session_id": str(session_id),
+                "name": camp.name,
+                "match_type": camp.match_type,
+                "root_group": camp.root_group,
+                "daily_budget": float(camp.daily_budget),
+                "default_bid": float(camp.default_bid),
+                "keyword_bid": float(camp.keyword_bid),
+                "bidding_strategy": camp.bidding_strategy,
+                "start_date": camp.start_date if camp.start_date else None,
+                "status": camp.status,
+                "is_solo": camp.is_solo,
+                "is_auto": camp.is_auto,
+                "sv_tier": camp.sv_tier,
+            }
+
+            result = supabase.schema("keyword_analysis").table("campaigns").insert(
+                campaign_data
+            ).execute()
+
+            if result.data:
+                db_campaign = result.data[0]
+                campaign_id = db_campaign["id"]
+
+                # Insert campaign keywords
+                if camp.keyword_ids:
+                    kw_data = [
+                        {
+                            "campaign_id": campaign_id,
+                            "keyword_id": kw_id,
+                            "status": "enabled"
+                        }
+                        for kw_id in camp.keyword_ids
+                    ]
+                    supabase.schema("keyword_analysis").table("campaign_keywords").insert(
+                        kw_data
+                    ).execute()
+
+                campaigns_response.append(CampaignResponse(
+                    id=campaign_id,
+                    name=db_campaign["name"],
+                    match_type=db_campaign["match_type"],
+                    root_group=db_campaign.get("root_group"),
+                    keyword_count=len(camp.keyword_ids),
+                    daily_budget=db_campaign["daily_budget"],
+                    default_bid=db_campaign["default_bid"],
+                    keyword_bid=db_campaign.get("keyword_bid"),
+                    bidding_strategy=db_campaign["bidding_strategy"],
+                    start_date=str(db_campaign["start_date"]) if db_campaign.get("start_date") else "",
+                    status=db_campaign["status"],
+                    is_solo=db_campaign.get("is_solo", False),
+                    is_auto=db_campaign.get("is_auto", False),
+                    sv_tier=db_campaign.get("sv_tier"),
+                ))
+
         return CampaignListResponse(
             session_id=str(session_id),
-            campaigns=[],
-            total=0,
+            campaigns=campaigns_response,
+            total=len(campaigns_response),
         )
 
     except HTTPException:
@@ -879,9 +1153,9 @@ async def export_bulk_sheet(
         )
 
     try:
-        # Verify session ownership
+        # Verify session ownership and get config
         session = supabase.schema("keyword_analysis").table("campaign_sessions").select(
-            "id"
+            "id, keyword_session_id, config"
         ).eq("id", str(session_id)).eq("user_id", user_id).execute()
 
         if not session.data:
@@ -890,14 +1164,87 @@ async def export_bulk_sheet(
                 detail="Campaign session not found"
             )
 
-        # TODO: Implement bulk sheet export in Phase 4
-        # For now, return summary with zeros
+        keyword_session_id = session.data[0]["keyword_session_id"]
+        config = session.data[0].get("config", {})
+
+        # Get campaigns for this session
+        campaigns_result = supabase.schema("keyword_analysis").table("campaigns").select(
+            "*, campaign_keywords(keyword_id)"
+        ).eq("campaign_session_id", str(session_id)).execute()
+
+        campaigns = campaigns_result.data or []
+
+        # Filter by campaign_ids if provided
+        if request.campaign_ids:
+            campaign_id_set = set(request.campaign_ids)
+            campaigns = [c for c in campaigns if c["id"] in campaign_id_set]
+
+        # Get keywords
+        keywords_result = supabase.schema("keyword_analysis").table("results").select(
+            "id, keyword, search_volume"
+        ).eq("session_id", keyword_session_id).execute()
+
+        keywords = [
+            ExportKeyword(
+                id=kw["id"],
+                normalized_text=kw["keyword"],
+                original_text=kw["keyword"],
+                search_volume=kw.get("search_volume", 0) or 0
+            )
+            for kw in (keywords_result.data or [])
+        ]
+
+        # Get negatives if requested
+        campaign_negatives = {}
+        if request.include_negatives:
+            negatives_result = supabase.schema("keyword_analysis").table("campaign_negatives").select(
+                "*"
+            ).eq("campaign_session_id", str(session_id)).execute()
+
+            # Group negatives by campaign (for now, all negatives apply globally)
+            for c in campaigns:
+                exact_negs = [
+                    n["keyword_text"] for n in (negatives_result.data or [])
+                    if n["match_type"] == "negative_exact"
+                ]
+                phrase_negs = [
+                    n["keyword_text"] for n in (negatives_result.data or [])
+                    if n["match_type"] == "negative_phrase"
+                ]
+                campaign_negatives[c["id"]] = CampaignNegatives(
+                    exact=exact_negs,
+                    phrase=phrase_negs
+                )
+
+        # Convert to export format
+        export_campaigns = [
+            ExportCampaign(
+                id=c["id"],
+                name=c["name"],
+                match_type=c["match_type"],
+                keyword_ids=[ck["keyword_id"] for ck in c.get("campaign_keywords", [])],
+                daily_budget=c["daily_budget"],
+                default_bid=c["default_bid"],
+                keyword_bid=c.get("keyword_bid") or c["default_bid"],
+                bidding_strategy=c["bidding_strategy"],
+                start_date=str(c["start_date"]) if c.get("start_date") else "",
+                status=c["status"],
+                is_solo=c.get("is_solo", False),
+                is_auto=c.get("is_auto", False),
+                root_group=c.get("root_group"),
+            )
+            for c in campaigns
+        ]
+
+        # Get export summary
+        summary = get_export_summary(export_campaigns, keywords, campaign_negatives)
+
         return ExportSummary(
-            total_campaigns=0,
-            total_keywords=0,
-            total_negatives=0,
-            total_rows=0,
-            match_type_breakdown={},
+            total_campaigns=summary["total_campaigns"],
+            total_keywords=summary["total_keywords"],
+            total_negatives=summary["total_negatives"],
+            total_rows=summary["total_rows"],
+            match_type_breakdown=summary["match_type_breakdown"],
         )
 
     except HTTPException:
@@ -932,9 +1279,9 @@ async def download_bulk_sheet(
         )
 
     try:
-        # Verify session ownership
+        # Verify session ownership and get config
         session = supabase.schema("keyword_analysis").table("campaign_sessions").select(
-            "id, name"
+            "id, name, keyword_session_id, config"
         ).eq("id", str(session_id)).eq("user_id", user_id).execute()
 
         if not session.data:
@@ -943,11 +1290,110 @@ async def download_bulk_sheet(
                 detail="Campaign session not found"
             )
 
-        # TODO: Implement actual XLSX generation in Phase 4
-        # For now, return a placeholder response
-        raise HTTPException(
-            status_code=status.HTTP_501_NOT_IMPLEMENTED,
-            detail="Bulk sheet download not yet implemented"
+        session_data = session.data[0]
+        keyword_session_id = session_data["keyword_session_id"]
+        config = session_data.get("config", {})
+        session_name = session_data.get("name", "campaigns")
+
+        # Get campaigns for this session
+        campaigns_result = supabase.schema("keyword_analysis").table("campaigns").select(
+            "*, campaign_keywords(keyword_id)"
+        ).eq("campaign_session_id", str(session_id)).execute()
+
+        campaigns = campaigns_result.data or []
+
+        if not campaigns:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No campaigns to export"
+            )
+
+        # Get keywords
+        keywords_result = supabase.schema("keyword_analysis").table("results").select(
+            "id, keyword, search_volume"
+        ).eq("session_id", keyword_session_id).execute()
+
+        keywords = [
+            ExportKeyword(
+                id=kw["id"],
+                normalized_text=kw["keyword"],
+                original_text=kw["keyword"],
+                search_volume=kw.get("search_volume", 0) or 0
+            )
+            for kw in (keywords_result.data or [])
+        ]
+
+        # Get negatives
+        negatives_result = supabase.schema("keyword_analysis").table("campaign_negatives").select(
+            "*"
+        ).eq("campaign_session_id", str(session_id)).execute()
+
+        campaign_negatives = {}
+        for c in campaigns:
+            exact_negs = [
+                n["keyword_text"] for n in (negatives_result.data or [])
+                if n["match_type"] == "negative_exact"
+            ]
+            phrase_negs = [
+                n["keyword_text"] for n in (negatives_result.data or [])
+                if n["match_type"] == "negative_phrase"
+            ]
+            campaign_negatives[c["id"]] = CampaignNegatives(
+                exact=exact_negs,
+                phrase=phrase_negs
+            )
+
+        # Convert to export format
+        export_campaigns = [
+            ExportCampaign(
+                id=c["id"],
+                name=c["name"],
+                match_type=c["match_type"],
+                keyword_ids=[ck["keyword_id"] for ck in c.get("campaign_keywords", [])],
+                daily_budget=c["daily_budget"],
+                default_bid=c["default_bid"],
+                keyword_bid=c.get("keyword_bid") or c["default_bid"],
+                bidding_strategy=c["bidding_strategy"],
+                start_date=str(c["start_date"]) if c.get("start_date") else "",
+                status=c["status"],
+                is_solo=c.get("is_solo", False),
+                is_auto=c.get("is_auto", False),
+                root_group=c.get("root_group"),
+            )
+            for c in campaigns
+        ]
+
+        # Get SKU from config
+        sku = config.get("sku", "")
+
+        # Generate bulk sheet
+        options = ExportOptions(
+            include_campaign_rows=True,
+            include_ad_group_rows=True,
+            include_keyword_rows=True,
+            include_product_ad_rows=True,
+            sku=sku,
+            format=format,
+        )
+
+        workbook = generate_bulk_sheet(
+            campaigns=export_campaigns,
+            keywords=keywords,
+            overrides={},
+            options=options,
+            campaign_negatives=campaign_negatives,
+        )
+
+        # Convert to bytes
+        xlsx_bytes = workbook_to_bytes(workbook)
+
+        # Generate filename
+        filename = f"{session_name or 'campaigns'}_bulk_sheet.xlsx"
+
+        return StreamingResponse(
+            iter([xlsx_bytes]),
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'}
         )
 
     except HTTPException:

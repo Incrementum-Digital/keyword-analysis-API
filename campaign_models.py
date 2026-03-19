@@ -162,6 +162,7 @@ class CampaignNegativeRequest(BaseModel):
 class NormVariant(BaseModel):
     """Variant within a normalization group"""
     keyword: str
+    keyword_id: str = Field(..., description="ID of the keyword in keyword_analysis.results")
     search_volume: int
     reason: str = Field(..., description="Normalization reason (e.g., 'Plural → Singular')")
     is_merged: bool = Field(default=True)
