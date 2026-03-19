@@ -202,9 +202,9 @@ class CampaignResponse(BaseModel):
     root_group: Optional[str] = None
     keyword_count: int
     keywords: Optional[List[CampaignKeywordResponse]] = None
-    daily_budget: Decimal
-    default_bid: Decimal
-    keyword_bid: Optional[Decimal] = None
+    daily_budget: float  # Changed from Decimal to ensure JSON serializes as number
+    default_bid: float   # Changed from Decimal to ensure JSON serializes as number
+    keyword_bid: Optional[float] = None  # Changed from Decimal
     bidding_strategy: str
     start_date: str
     status: str
