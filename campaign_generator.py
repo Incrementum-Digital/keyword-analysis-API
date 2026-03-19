@@ -146,8 +146,9 @@ def generate_campaigns(input_data: GenerateInput) -> List[Campaign]:
             if kw.id in input_data.solo_keyword_ids
         ]
 
-        # Grouped keywords - only if roots are selected
+        # Grouped keywords
         if selected_root_names:
+            # If roots are selected, include keywords in those roots + ungrouped if flag is set
             grouped_kws = [
                 kw for kw in match_keywords
                 if kw.id not in input_data.solo_keyword_ids
@@ -155,6 +156,12 @@ def generate_campaigns(input_data: GenerateInput) -> List[Campaign]:
                     assignments.get(kw.id) in selected_root_names
                     or (input_data.include_ungrouped and assignments.get(kw.id) == 'Mixed Roots')
                 )
+            ]
+        elif input_data.include_ungrouped:
+            # No roots selected but include_ungrouped is True: treat ALL non-solo keywords as ungrouped
+            grouped_kws = [
+                kw for kw in match_keywords
+                if kw.id not in input_data.solo_keyword_ids
             ]
         else:
             grouped_kws = []
