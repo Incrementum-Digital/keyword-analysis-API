@@ -94,13 +94,23 @@ async def create_campaign_session(request: CreateCampaignSessionRequest):
 
         # Check if campaign session already exists for this keyword session
         existing = supabase.schema("keyword_analysis").table("campaign_sessions").select(
-            "id"
+            "*"
         ).eq("keyword_session_id", request.keyword_session_id).execute()
 
         if existing.data:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="Campaign session already exists for this keyword session"
+            # Return existing session instead of error (idempotent create)
+            row = existing.data[0]
+            return CampaignSessionResponse(
+                id=row["id"],
+                keyword_session_id=row["keyword_session_id"],
+                user_id=row["user_id"],
+                name=row.get("name"),
+                status=row["status"],
+                current_step=row["current_step"],
+                config=row.get("config", {}),
+                existing_targeting=row.get("existing_targeting"),
+                created_at=row["created_at"],
+                updated_at=row["updated_at"],
             )
 
         # Create campaign session
