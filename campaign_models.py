@@ -76,7 +76,7 @@ class CreateCampaignSessionRequest(BaseModel):
 
 class UpdateCampaignSessionRequest(BaseModel):
     """Request to update campaign session configuration"""
-    config: CampaignSessionConfig = Field(..., description="Updated configuration")
+    config: Optional[CampaignSessionConfig] = Field(None, description="Updated configuration")
     current_step: Optional[int] = Field(None, ge=1, le=4, description="Current wizard step")
     status: Optional[str] = Field(None, description="Session status: draft or complete")
 
