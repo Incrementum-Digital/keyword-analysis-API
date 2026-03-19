@@ -52,6 +52,7 @@ from root_analysis_service import generate_root_analysis
 from negative_phrase_service import generate_negative_phrases
 from datadive_client import DataDiveClient, compare_root_analysis
 from bulk_sheets_router import router as bulk_sheets_router
+from campaign_router import router as campaign_router
 from supabase_client import is_supabase_configured
 
 # Create FastAPI app
@@ -70,12 +71,13 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
     allow_credentials=True,
-    allow_methods=["GET", "POST", "DELETE"],
+    allow_methods=["GET", "POST", "PUT", "DELETE"],
     allow_headers=["*"],
 )
 
 # Include routers
 app.include_router(bulk_sheets_router)
+app.include_router(campaign_router)
 
 
 # Global exception handler for unhandled errors
@@ -115,6 +117,20 @@ async def root():
             "GET /bulk-sheets/{id}/targets": "Get targets from bulk sheet",
             "DELETE /bulk-sheets/{id}": "Delete bulk sheet",
             "POST /bulk-sheets/check-targeting": "Check keyword targeting status",
+            "POST /campaign-sessions": "Create campaign session from keyword session",
+            "GET /campaign-sessions/{id}": "Get campaign session with all data",
+            "PUT /campaign-sessions/{id}": "Update campaign session config",
+            "POST /campaign-sessions/{id}/normalize": "Generate normalization suggestions",
+            "PUT /campaign-sessions/{id}/normalize": "Save normalization decisions",
+            "POST /campaign-sessions/{id}/campaigns": "Generate campaigns from keywords",
+            "GET /campaign-sessions/{id}/campaigns": "List campaigns for session",
+            "PUT /campaign-sessions/{id}/campaigns/{cid}": "Update a campaign",
+            "DELETE /campaign-sessions/{id}/campaigns/{cid}": "Delete a campaign",
+            "GET /campaign-sessions/{id}/negatives": "List negative keywords",
+            "POST /campaign-sessions/{id}/negatives": "Add negative keyword",
+            "DELETE /campaign-sessions/{id}/negatives/{nid}": "Delete negative keyword",
+            "POST /campaign-sessions/{id}/export": "Generate bulk sheet export",
+            "GET /campaign-sessions/{id}/export/download": "Download bulk sheet XLSX",
         },
         "documentation": "/docs"
     }
