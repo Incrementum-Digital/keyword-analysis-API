@@ -537,13 +537,14 @@ async def get_root_groups(session_id: UUID, user_id: str):
         # Detect roots
         root_groups = detect_roots_from_keywords(gen_keywords)
 
-        # Convert to response format
+        # Convert to response format (include keyword_ids for frontend display)
         roots = [
             {
                 "name": r.name,
                 "frequency": r.frequency,
                 "total_sv": r.total_sv,
                 "keyword_count": len(r.keyword_ids),
+                "keyword_ids": r.keyword_ids,
             }
             for r in root_groups
         ]
