@@ -35,6 +35,10 @@ COLUMN_MAP = {
     "Keyword Text": "keyword",
     "Campaign": "campaign_name",
     "Ad Group": "ad_group_name",
+    # Amazon Advertising Console bulk sheet format
+    "Keyword or Product Targeting": "keyword",
+    "Product Targeting": "keyword",
+    "Targeting": "keyword",
 }
 
 # Match type normalization
