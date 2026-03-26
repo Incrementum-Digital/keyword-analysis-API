@@ -174,11 +174,40 @@ class CampaignNegativesForExport(BaseModel):
     phrase: List[str] = Field(default_factory=list)
 
 
+class CampaignKeywordForExport(BaseModel):
+    """Keyword within a campaign for export"""
+    id: str = Field(..., description="Keyword ID")
+    text: str = Field(..., description="Keyword text")
+    sv: int = Field(default=0, description="Search volume")
+
+
+class CampaignForExport(BaseModel):
+    """Campaign data sent from frontend for export"""
+    id: str = Field(..., description="Campaign ID")
+    name: str = Field(..., description="Campaign name")
+    match_type: str = Field(..., description="Match type: exact, phrase, broad, product, auto")
+    root_group: Optional[str] = Field(None, description="Root group name")
+    daily_budget: float = Field(..., description="Daily budget")
+    default_bid: float = Field(..., description="Default bid for ad group")
+    keyword_bid: Optional[float] = Field(None, description="Keyword bid")
+    bidding_strategy: str = Field(default="Fixed", description="Bidding strategy")
+    start_date: Optional[str] = Field(None, description="Start date YYYY-MM-DD")
+    status: str = Field(default="Enabled", description="Campaign status")
+    is_auto: bool = Field(default=False, description="Is auto targeting campaign")
+    keywords: Optional[List[CampaignKeywordForExport]] = Field(
+        None, description="Keywords in this campaign"
+    )
+
+
 class DownloadBulkSheetRequest(BaseModel):
-    """Request to download bulk sheet with negatives"""
+    """Request to download bulk sheet with campaigns and negatives"""
+    campaigns: Optional[List[CampaignForExport]] = Field(
+        None,
+        description="Campaigns to export (from frontend). If not provided, fetches from DB."
+    )
     campaign_negatives: Dict[str, CampaignNegativesForExport] = Field(
         default_factory=dict,
-        description="Negative keywords per campaign ID"
+        description="Negative keywords per campaign name"
     )
 
 

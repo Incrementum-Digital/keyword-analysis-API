@@ -5,6 +5,7 @@ Endpoints for creating and managing Amazon PPC campaign sessions,
 keyword normalization, campaign generation, and bulk sheet export.
 """
 import logging
+from decimal import Decimal
 from typing import Optional
 from uuid import UUID
 
@@ -1325,82 +1326,107 @@ async def download_bulk_sheet(
         config = session_data.get("config", {})
         session_name = session_data.get("name", "campaigns")
 
-        # Get campaigns for this session
-        campaigns_result = supabase.schema("keyword_analysis").table("campaigns").select(
-            "*, campaign_keywords(keyword_id)"
-        ).eq("campaign_session_id", str(session_id)).execute()
+        # Use campaigns from request if provided (frontend-generated for consistency)
+        # Otherwise fall back to database campaigns
+        if request.campaigns:
+            # Use frontend-provided campaigns - ensures report matches export
+            export_campaigns = []
+            keywords = []
+            keyword_ids_seen = set()
 
-        campaigns = campaigns_result.data or []
+            for c in request.campaigns:
+                # Build keyword_ids from campaign keywords
+                campaign_keyword_ids = []
+                if c.keywords:
+                    for kw in c.keywords:
+                        campaign_keyword_ids.append(kw.id)
+                        # Collect unique keywords for export
+                        if kw.id not in keyword_ids_seen:
+                            keyword_ids_seen.add(kw.id)
+                            keywords.append(ExportKeyword(
+                                id=kw.id,
+                                normalized_text=kw.text,
+                                original_text=kw.text,
+                                search_volume=kw.sv
+                            ))
 
-        if not campaigns:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="No campaigns to export"
-            )
+                export_campaigns.append(ExportCampaign(
+                    id=c.id,
+                    name=c.name,
+                    match_type=c.match_type,
+                    keyword_ids=campaign_keyword_ids,
+                    daily_budget=Decimal(str(c.daily_budget)),
+                    default_bid=Decimal(str(c.default_bid)),
+                    keyword_bid=Decimal(str(c.keyword_bid)) if c.keyword_bid else Decimal(str(c.default_bid)),
+                    bidding_strategy=c.bidding_strategy,
+                    start_date=c.start_date or "",
+                    status=c.status,
+                    is_solo=False,
+                    is_auto=c.is_auto,
+                    root_group=c.root_group,
+                ))
 
-        # Get keywords
-        keywords_result = supabase.schema("keyword_analysis").table("results").select(
-            "id, keyword, search_volume"
-        ).eq("session_id", keyword_session_id).execute()
+            if not export_campaigns:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="No campaigns to export"
+                )
+        else:
+            # Fall back to database campaigns
+            campaigns_result = supabase.schema("keyword_analysis").table("campaigns").select(
+                "*, campaign_keywords(keyword_id)"
+            ).eq("campaign_session_id", str(session_id)).execute()
 
-        keywords = [
-            ExportKeyword(
-                id=kw["id"],
-                normalized_text=kw["keyword"],
-                original_text=kw["keyword"],
-                search_volume=kw.get("search_volume", 0) or 0
-            )
-            for kw in (keywords_result.data or [])
-        ]
+            campaigns = campaigns_result.data or []
 
-        # Get negatives - use request body if provided, otherwise fetch from database
+            if not campaigns:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="No campaigns to export"
+                )
+
+            # Get keywords from database
+            keywords_result = supabase.schema("keyword_analysis").table("results").select(
+                "id, keyword, search_volume"
+            ).eq("session_id", keyword_session_id).execute()
+
+            keywords = [
+                ExportKeyword(
+                    id=kw["id"],
+                    normalized_text=kw["keyword"],
+                    original_text=kw["keyword"],
+                    search_volume=kw.get("search_volume", 0) or 0
+                )
+                for kw in (keywords_result.data or [])
+            ]
+
+            export_campaigns = [
+                ExportCampaign(
+                    id=c["id"],
+                    name=c["name"],
+                    match_type=c["match_type"],
+                    keyword_ids=[ck["keyword_id"] for ck in c.get("campaign_keywords", [])],
+                    daily_budget=c["daily_budget"],
+                    default_bid=c["default_bid"],
+                    keyword_bid=c.get("keyword_bid") or c["default_bid"],
+                    bidding_strategy=c["bidding_strategy"],
+                    start_date=str(c["start_date"]) if c.get("start_date") else "",
+                    status=c["status"],
+                    is_solo=c.get("is_solo", False),
+                    is_auto=c.get("is_auto", False),
+                    root_group=c.get("root_group"),
+                )
+                for c in campaigns
+            ]
+
+        # Get negatives from request (keyed by campaign name)
         campaign_negatives = {}
         if request.campaign_negatives:
-            # Use negatives from request body (client-side edits)
-            for campaign_id, negs in request.campaign_negatives.items():
-                campaign_negatives[campaign_id] = CampaignNegatives(
+            for campaign_name, negs in request.campaign_negatives.items():
+                campaign_negatives[campaign_name] = CampaignNegatives(
                     exact=negs.exact,
                     phrase=negs.phrase
                 )
-        else:
-            # Fall back to database negatives
-            negatives_result = supabase.schema("keyword_analysis").table("campaign_negatives").select(
-                "*"
-            ).eq("campaign_session_id", str(session_id)).execute()
-
-            for c in campaigns:
-                exact_negs = [
-                    n["keyword_text"] for n in (negatives_result.data or [])
-                    if n["match_type"] == "negative_exact"
-                ]
-                phrase_negs = [
-                    n["keyword_text"] for n in (negatives_result.data or [])
-                    if n["match_type"] == "negative_phrase"
-                ]
-                campaign_negatives[c["id"]] = CampaignNegatives(
-                    exact=exact_negs,
-                    phrase=phrase_negs
-                )
-
-        # Convert to export format
-        export_campaigns = [
-            ExportCampaign(
-                id=c["id"],
-                name=c["name"],
-                match_type=c["match_type"],
-                keyword_ids=[ck["keyword_id"] for ck in c.get("campaign_keywords", [])],
-                daily_budget=c["daily_budget"],
-                default_bid=c["default_bid"],
-                keyword_bid=c.get("keyword_bid") or c["default_bid"],
-                bidding_strategy=c["bidding_strategy"],
-                start_date=str(c["start_date"]) if c.get("start_date") else "",
-                status=c["status"],
-                is_solo=c.get("is_solo", False),
-                is_auto=c.get("is_auto", False),
-                root_group=c.get("root_group"),
-            )
-            for c in campaigns
-        ]
 
         # Get SKU from config
         sku = config.get("sku", "")
