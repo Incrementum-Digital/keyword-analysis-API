@@ -154,6 +154,20 @@ class CampaignNegativeRequest(BaseModel):
     )
 
 
+class CampaignNegativesForExport(BaseModel):
+    """Negative keywords for a campaign in export format"""
+    exact: List[str] = Field(default_factory=list)
+    phrase: List[str] = Field(default_factory=list)
+
+
+class DownloadBulkSheetRequest(BaseModel):
+    """Request to download bulk sheet with negatives"""
+    campaign_negatives: Dict[str, CampaignNegativesForExport] = Field(
+        default_factory=dict,
+        description="Negative keywords per campaign ID"
+    )
+
+
 # ============================================================================
 # Response Models
 # ============================================================================

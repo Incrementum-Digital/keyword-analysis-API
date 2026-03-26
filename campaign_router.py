@@ -18,6 +18,7 @@ from campaign_models import (
     CampaignResponse,
     CampaignSessionResponse,
     CreateCampaignSessionRequest,
+    DownloadBulkSheetRequest,
     ExportBulkSheetRequest,
     ExportSummary,
     GenerateCampaignsRequest,
@@ -1268,9 +1269,10 @@ async def export_bulk_sheet(
         )
 
 
-@router.get("/{session_id}/export/download")
+@router.post("/{session_id}/export/download")
 async def download_bulk_sheet(
     session_id: UUID,
+    request: DownloadBulkSheetRequest,
     user_id: str,
     format: str = "new",
 ):
@@ -1280,6 +1282,9 @@ async def download_bulk_sheet(
     Format options:
     - 'new': Current Amazon bulk sheet format
     - 'legacy': Legacy bulk sheet format
+
+    The request body can include campaign_negatives to override
+    database-stored negatives (for client-side edits not yet saved).
     """
     try:
         supabase = get_supabase_client()
@@ -1334,25 +1339,34 @@ async def download_bulk_sheet(
             for kw in (keywords_result.data or [])
         ]
 
-        # Get negatives
-        negatives_result = supabase.schema("keyword_analysis").table("campaign_negatives").select(
-            "*"
-        ).eq("campaign_session_id", str(session_id)).execute()
-
+        # Get negatives - use request body if provided, otherwise fetch from database
         campaign_negatives = {}
-        for c in campaigns:
-            exact_negs = [
-                n["keyword_text"] for n in (negatives_result.data or [])
-                if n["match_type"] == "negative_exact"
-            ]
-            phrase_negs = [
-                n["keyword_text"] for n in (negatives_result.data or [])
-                if n["match_type"] == "negative_phrase"
-            ]
-            campaign_negatives[c["id"]] = CampaignNegatives(
-                exact=exact_negs,
-                phrase=phrase_negs
-            )
+        if request.campaign_negatives:
+            # Use negatives from request body (client-side edits)
+            for campaign_id, negs in request.campaign_negatives.items():
+                campaign_negatives[campaign_id] = CampaignNegatives(
+                    exact=negs.exact,
+                    phrase=negs.phrase
+                )
+        else:
+            # Fall back to database negatives
+            negatives_result = supabase.schema("keyword_analysis").table("campaign_negatives").select(
+                "*"
+            ).eq("campaign_session_id", str(session_id)).execute()
+
+            for c in campaigns:
+                exact_negs = [
+                    n["keyword_text"] for n in (negatives_result.data or [])
+                    if n["match_type"] == "negative_exact"
+                ]
+                phrase_negs = [
+                    n["keyword_text"] for n in (negatives_result.data or [])
+                    if n["match_type"] == "negative_phrase"
+                ]
+                campaign_negatives[c["id"]] = CampaignNegatives(
+                    exact=exact_negs,
+                    phrase=phrase_negs
+                )
 
         # Convert to export format
         export_campaigns = [
