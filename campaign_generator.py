@@ -216,10 +216,9 @@ def generate_campaigns(input_data: GenerateInput) -> List[Campaign]:
                 )
             ]
 
-            # Bucket keywords into tiers, then chunk each tier by maxKeywords
-            all_chunks: List[tuple] = []  # (tier_label, keywords)
             assigned: Set[str] = set()
 
+            # Process each tier separately to get per-tier indexing
             for tier in tiers:
                 tier_kws = [
                     kw for kw in root_kws
@@ -230,46 +229,81 @@ def generate_campaigns(input_data: GenerateInput) -> List[Campaign]:
                 for kw in tier_kws:
                     assigned.add(kw.id)
 
+                if not tier_kws:
+                    continue
+
                 # Chunk by max_keywords
+                tier_chunks = []
                 for i in range(0, len(tier_kws), tier.max_keywords):
-                    chunk = tier_kws[i:i + tier.max_keywords]
-                    all_chunks.append((tier.label, chunk))
+                    tier_chunks.append(tier_kws[i:i + tier.max_keywords])
+
+                # Create campaigns with per-tier indexing
+                for chunk_idx, chunk_kws in enumerate(tier_chunks):
+                    # Only show index if multiple chunks in THIS tier
+                    index_for_name = chunk_idx if len(tier_chunks) > 1 else None
+                    campaigns.append(Campaign(
+                        id=_gen_id(),
+                        name=generate_campaign_name(
+                            naming_template,
+                            NamingContext(
+                                sku=sku,
+                                match_type=match_type,
+                                root_group=root_name,
+                                tier=tier.label if len(tiers) > 1 else None,
+                                date=config.start_date,
+                                index=index_for_name,
+                            )
+                        ),
+                        match_type=match_type,
+                        root_group=root_name,
+                        keyword_ids=[kw.id for kw in chunk_kws],
+                        daily_budget=config.daily_budget,
+                        default_bid=config.default_bid,
+                        keyword_bid=config.keyword_bid,
+                        bidding_strategy=config.bidding_strategy,
+                        start_date=config.start_date,
+                        status=config.status,
+                        is_solo=False,
+                        is_auto=False,
+                        sv_tier=tier.label,
+                    ))
 
             # Catch any keywords that didn't fall into a tier
             uncaught = [kw for kw in root_kws if kw.id not in assigned]
             if uncaught:
                 fallback_max = tiers[-1].max_keywords if tiers else config.max_kw_per_campaign
+                uncaught_chunks = []
                 for i in range(0, len(uncaught), fallback_max):
-                    all_chunks.append(('All', uncaught[i:i + fallback_max]))
+                    uncaught_chunks.append(uncaught[i:i + fallback_max])
 
-            # Create campaigns from chunks
-            for idx, (tier_label, chunk_kws) in enumerate(all_chunks):
-                campaigns.append(Campaign(
-                    id=_gen_id(),
-                    name=generate_campaign_name(
-                        naming_template,
-                        NamingContext(
-                            sku=sku,
-                            match_type=match_type,
-                            root_group=root_name,
-                            tier=tier_label if len(tiers) > 1 else None,
-                            date=config.start_date,
-                            index=idx if len(all_chunks) > 1 else None,
-                        )
-                    ),
-                    match_type=match_type,
-                    root_group=root_name,
-                    keyword_ids=[kw.id for kw in chunk_kws],
-                    daily_budget=config.daily_budget,
-                    default_bid=config.default_bid,
-                    keyword_bid=config.keyword_bid,
-                    bidding_strategy=config.bidding_strategy,
-                    start_date=config.start_date,
-                    status=config.status,
-                    is_solo=False,
-                    is_auto=False,
-                    sv_tier=tier_label,
-                ))
+                for chunk_idx, chunk_kws in enumerate(uncaught_chunks):
+                    index_for_name = chunk_idx if len(uncaught_chunks) > 1 else None
+                    campaigns.append(Campaign(
+                        id=_gen_id(),
+                        name=generate_campaign_name(
+                            naming_template,
+                            NamingContext(
+                                sku=sku,
+                                match_type=match_type,
+                                root_group=root_name,
+                                tier='All',
+                                date=config.start_date,
+                                index=index_for_name,
+                            )
+                        ),
+                        match_type=match_type,
+                        root_group=root_name,
+                        keyword_ids=[kw.id for kw in chunk_kws],
+                        daily_budget=config.daily_budget,
+                        default_bid=config.default_bid,
+                        keyword_bid=config.keyword_bid,
+                        bidding_strategy=config.bidding_strategy,
+                        start_date=config.start_date,
+                        status=config.status,
+                        is_solo=False,
+                        is_auto=False,
+                        sv_tier='All',
+                    ))
 
     # Manual campaign groups (Product, Auto, custom configurations)
     all_manual_types = ['exact', 'phrase', 'broad', 'product', 'auto']
