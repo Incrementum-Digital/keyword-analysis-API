@@ -257,7 +257,8 @@ def generate_bulk_sheet(
                 rows.append(row)
 
         # 7. Campaign negative keyword rows
-        negs = (campaign_negatives or {}).get(campaign.id)
+        # Look up negatives by campaign ID first, then by campaign name (for frontend-computed campaigns)
+        negs = (campaign_negatives or {}).get(campaign.id) or (campaign_negatives or {}).get(campaign.name)
         if negs:
             for kw_text in negs.exact:
                 row = empty_row()
