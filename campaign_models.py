@@ -97,6 +97,16 @@ class SaveNormalizationRequest(BaseModel):
     )
 
 
+class ManualCampaignGroupRequest(BaseModel):
+    """Manual campaign group for custom/product/auto targeting"""
+    id: int = Field(..., description="Unique ID for this manual campaign group")
+    name: str = Field(..., description="Custom campaign name")
+    keyword_ids: List[str] = Field(
+        default_factory=list,
+        description="Keyword IDs to include in this campaign"
+    )
+
+
 class GenerateCampaignsRequest(BaseModel):
     """Request to generate campaigns"""
     config: CampaignSessionConfig = Field(..., description="Campaign configuration")
@@ -111,6 +121,10 @@ class GenerateCampaignsRequest(BaseModel):
     include_ungrouped: bool = Field(
         default=True,
         description="Whether to include keywords not in any root group"
+    )
+    manual_campaign_groups: Dict[str, List[ManualCampaignGroupRequest]] = Field(
+        default_factory=dict,
+        description="Manual campaign groups per match type (exact, phrase, broad, product, auto)"
     )
 
 

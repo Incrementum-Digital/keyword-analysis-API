@@ -36,6 +36,7 @@ from campaign_generator import (
     Keyword as GenKeyword,
     MatchTypeConfig as GenMatchTypeConfig,
     SVTier as GenSVTier,
+    ManualCampaignGroup as GenManualCampaignGroup,
     generate_campaigns as run_campaign_generator,
     detect_roots_from_keywords,
 )
@@ -666,6 +667,18 @@ async def generate_campaigns(
             custom_tokens=request.config.naming_template.custom_tokens or {}
         )
 
+        # Convert manual campaign groups from request to generator format
+        manual_campaign_groups = {}
+        for match_type, groups in (request.manual_campaign_groups or {}).items():
+            manual_campaign_groups[match_type] = [
+                GenManualCampaignGroup(
+                    id=g.id,
+                    name=g.name,
+                    keyword_ids=g.keyword_ids
+                )
+                for g in groups
+            ]
+
         # Generate campaigns
         gen_input = GenerateInput(
             keywords=gen_keywords,
@@ -677,6 +690,7 @@ async def generate_campaigns(
             include_ungrouped=request.include_ungrouped,
             sku=request.config.sku or "",
             naming_template=naming_template,
+            manual_campaign_groups=manual_campaign_groups,
         )
 
         generated_campaigns = run_campaign_generator(gen_input)
