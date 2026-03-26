@@ -701,11 +701,9 @@ async def generate_campaigns(
             "campaign_session_id", str(session_id)
         ).execute()
 
-        # Insert generated campaigns
-        campaigns_response = []
-        for camp in generated_campaigns:
-            # Insert campaign
-            campaign_data = {
+        # Batch insert all campaigns at once for performance
+        campaigns_data = [
+            {
                 "campaign_session_id": str(session_id),
                 "name": camp.name,
                 "match_type": camp.match_type,
@@ -720,45 +718,53 @@ async def generate_campaigns(
                 "is_auto": camp.is_auto,
                 "sv_tier": camp.sv_tier,
             }
+            for camp in generated_campaigns
+        ]
 
-            result = supabase.schema("keyword_analysis").table("campaigns").insert(
-                campaign_data
+        # Batch insert campaigns
+        result = supabase.schema("keyword_analysis").table("campaigns").insert(
+            campaigns_data
+        ).execute()
+
+        # Build response and collect keyword data for batch insert
+        campaigns_response = []
+        all_kw_data = []
+
+        for i, db_campaign in enumerate(result.data or []):
+            campaign_id = db_campaign["id"]
+            camp = generated_campaigns[i]
+
+            # Collect keywords for batch insert
+            if camp.keyword_ids:
+                for kw_id in camp.keyword_ids:
+                    all_kw_data.append({
+                        "campaign_id": campaign_id,
+                        "keyword_id": kw_id,
+                        "status": "enabled"
+                    })
+
+            campaigns_response.append(CampaignResponse(
+                id=campaign_id,
+                name=db_campaign["name"],
+                match_type=db_campaign["match_type"],
+                root_group=db_campaign.get("root_group"),
+                keyword_count=len(camp.keyword_ids),
+                daily_budget=db_campaign["daily_budget"],
+                default_bid=db_campaign["default_bid"],
+                keyword_bid=db_campaign.get("keyword_bid"),
+                bidding_strategy=db_campaign["bidding_strategy"],
+                start_date=str(db_campaign["start_date"]) if db_campaign.get("start_date") else "",
+                status=db_campaign["status"],
+                is_solo=db_campaign.get("is_solo", False),
+                is_auto=db_campaign.get("is_auto", False),
+                sv_tier=db_campaign.get("sv_tier"),
+            ))
+
+        # Batch insert all campaign keywords at once
+        if all_kw_data:
+            supabase.schema("keyword_analysis").table("campaign_keywords").insert(
+                all_kw_data
             ).execute()
-
-            if result.data:
-                db_campaign = result.data[0]
-                campaign_id = db_campaign["id"]
-
-                # Insert campaign keywords
-                if camp.keyword_ids:
-                    kw_data = [
-                        {
-                            "campaign_id": campaign_id,
-                            "keyword_id": kw_id,
-                            "status": "enabled"
-                        }
-                        for kw_id in camp.keyword_ids
-                    ]
-                    supabase.schema("keyword_analysis").table("campaign_keywords").insert(
-                        kw_data
-                    ).execute()
-
-                campaigns_response.append(CampaignResponse(
-                    id=campaign_id,
-                    name=db_campaign["name"],
-                    match_type=db_campaign["match_type"],
-                    root_group=db_campaign.get("root_group"),
-                    keyword_count=len(camp.keyword_ids),
-                    daily_budget=db_campaign["daily_budget"],
-                    default_bid=db_campaign["default_bid"],
-                    keyword_bid=db_campaign.get("keyword_bid"),
-                    bidding_strategy=db_campaign["bidding_strategy"],
-                    start_date=str(db_campaign["start_date"]) if db_campaign.get("start_date") else "",
-                    status=db_campaign["status"],
-                    is_solo=db_campaign.get("is_solo", False),
-                    is_auto=db_campaign.get("is_auto", False),
-                    sv_tier=db_campaign.get("sv_tier"),
-                ))
 
         return CampaignListResponse(
             session_id=str(session_id),
