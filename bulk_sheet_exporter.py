@@ -78,6 +78,10 @@ class Campaign:
     is_solo: bool = False
     is_auto: bool = False
     root_group: Optional[str] = None
+    placement_multipliers_enabled: bool = False
+    placement_top_of_search: int = 0
+    placement_rest_of_search: int = 0
+    placement_product_page: int = 0
 
 
 @dataclass
@@ -121,6 +125,29 @@ def format_date(date_str: str) -> str:
     return date_str.replace('-', '') if date_str else ''
 
 
+def calculate_base_bid(max_bid: Decimal, bidding_strategy: str, placement_enabled: bool,
+                       top_pct: int = 0, rest_pct: int = 0, product_pct: int = 0) -> Decimal:
+    """
+    Calculate the base bid written to the bulk sheet from the user's Max Bid.
+
+    Accounts for two amplification layers:
+    1. Bidding Strategy: "Up and Down" can increase bids up to 100% (divisor=2)
+    2. Placement Multipliers: further amplify by highest percentage
+
+    Formula: base_bid = max_bid / strategy_divisor / (1 + highest_placement_pct / 100)
+    """
+    strategy_divisor = Decimal('2') if bidding_strategy == 'Dynamic Up & Down' else Decimal('1')
+    strategy_adjusted = max_bid / strategy_divisor
+
+    if placement_enabled:
+        highest = max(top_pct, rest_pct, product_pct)
+        if highest > 0:
+            base = strategy_adjusted / (1 + Decimal(highest) / 100)
+            return base.quantize(Decimal('0.01'))
+
+    return strategy_adjusted.quantize(Decimal('0.01'))
+
+
 def empty_row() -> Dict[str, str]:
     """Create an empty row with all columns."""
     return {col: '' for col in COLUMNS}
@@ -156,6 +183,16 @@ def generate_bulk_sheet(
         override = overrides.get(campaign.id, CampaignOverride())
         daily_budget = override.daily_budget if override.daily_budget else campaign.daily_budget
 
+        # Calculate base bid from max bid using placement multipliers and bidding strategy
+        base_bid = calculate_base_bid(
+            max_bid=campaign.keyword_bid,
+            bidding_strategy=campaign.bidding_strategy,
+            placement_enabled=campaign.placement_multipliers_enabled,
+            top_pct=campaign.placement_top_of_search,
+            rest_pct=campaign.placement_rest_of_search,
+            product_pct=campaign.placement_product_page,
+        )
+
         # 1. Campaign row
         if options.include_campaign_rows:
             row = empty_row()
@@ -169,6 +206,23 @@ def generate_bulk_sheet(
             row['Daily Budget'] = str(daily_budget)
             row['Bidding Strategy'] = format_bidding_strategy(campaign.bidding_strategy)
             rows.append(row)
+
+            # Placement multiplier rows (one per placement type with non-zero %)
+            if campaign.placement_multipliers_enabled:
+                for placement_type, pct in [
+                    ('Placement Top', campaign.placement_top_of_search),
+                    ('Placement Rest Of Search', campaign.placement_rest_of_search),
+                    ('Placement Product Page', campaign.placement_product_page),
+                ]:
+                    if pct > 0:
+                        prow = empty_row()
+                        prow['Product'] = 'Sponsored Products'
+                        prow['Entity'] = 'Bidding Adjustment'
+                        prow['Operation'] = 'Create'
+                        prow['Campaign Name'] = campaign.name
+                        prow['Placement'] = placement_type
+                        prow['Percentage'] = str(pct)
+                        rows.append(prow)
 
         # 2. Ad Group row
         if options.include_ad_group_rows:
@@ -203,7 +257,8 @@ def generate_bulk_sheet(
                 if not kw:
                     continue
 
-                bid = override.keyword_bids.get(kw_id, campaign.keyword_bid)
+                # Use per-keyword override bid if set, otherwise use calculated base bid
+                bid = override.keyword_bids.get(kw_id, base_bid)
                 is_paused = kw_id in paused_kw_ids
 
                 row = empty_row()

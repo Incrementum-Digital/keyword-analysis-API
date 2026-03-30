@@ -20,6 +20,13 @@ class SVTier(BaseModel):
     max_keywords: int = Field(default=10, ge=1, description="Max keywords per campaign in this tier")
 
 
+class PlacementMultipliers(BaseModel):
+    """Placement bid multiplier percentages (0-900%)"""
+    top_of_search: int = Field(default=0, ge=0, le=900, description="Top of Search placement multiplier %")
+    rest_of_search: int = Field(default=0, ge=0, le=900, description="Rest of Search placement multiplier %")
+    product_page: int = Field(default=0, ge=0, le=900, description="Product Page placement multiplier %")
+
+
 class MatchTypeConfig(BaseModel):
     """Configuration for a specific match type"""
     enabled: bool = Field(default=True, description="Whether this match type is enabled")
@@ -30,6 +37,14 @@ class MatchTypeConfig(BaseModel):
     bidding_strategy: str = Field(
         default="Fixed",
         description="Bidding strategy: Fixed, Dynamic Down, or Dynamic Up & Down"
+    )
+    placement_multipliers_enabled: bool = Field(
+        default=False,
+        description="Whether placement multipliers are enabled"
+    )
+    placement_multipliers: PlacementMultipliers = Field(
+        default_factory=PlacementMultipliers,
+        description="Placement bid multiplier percentages"
     )
     start_date: str = Field(default="", description="Campaign start date (YYYY-MM-DD)")
     status: str = Field(default="Enabled", description="Campaign status: Enabled or Paused")
@@ -135,6 +150,8 @@ class UpdateCampaignRequest(BaseModel):
     default_bid: Optional[Decimal] = None
     keyword_bid: Optional[Decimal] = None
     bidding_strategy: Optional[str] = None
+    placement_multipliers_enabled: Optional[bool] = None
+    placement_multipliers: Optional[PlacementMultipliers] = None
     start_date: Optional[str] = None
     status: Optional[str] = None
 
@@ -191,6 +208,8 @@ class CampaignForExport(BaseModel):
     default_bid: float = Field(..., description="Default bid for ad group")
     keyword_bid: Optional[float] = Field(None, description="Keyword bid")
     bidding_strategy: str = Field(default="Fixed", description="Bidding strategy")
+    placement_multipliers_enabled: bool = Field(default=False, description="Whether placement multipliers are enabled")
+    placement_multipliers: Optional[PlacementMultipliers] = Field(None, description="Placement multiplier percentages")
     start_date: Optional[str] = Field(None, description="Start date YYYY-MM-DD")
     status: str = Field(default="Enabled", description="Campaign status")
     is_auto: bool = Field(default=False, description="Is auto targeting campaign")

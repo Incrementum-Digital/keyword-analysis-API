@@ -1356,6 +1356,10 @@ async def download_bulk_sheet(
                                 search_volume=kw.sv
                             ))
 
+                # Extract placement multiplier values
+                pm_enabled = c.placement_multipliers_enabled
+                pm = c.placement_multipliers
+
                 export_campaigns.append(ExportCampaign(
                     id=c.id,
                     name=c.name,
@@ -1370,6 +1374,10 @@ async def download_bulk_sheet(
                     is_solo=False,
                     is_auto=c.is_auto,
                     root_group=c.root_group,
+                    placement_multipliers_enabled=pm_enabled,
+                    placement_top_of_search=pm.top_of_search if pm else 0,
+                    placement_rest_of_search=pm.rest_of_search if pm else 0,
+                    placement_product_page=pm.product_page if pm else 0,
                 ))
 
             if not export_campaigns:
