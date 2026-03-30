@@ -39,7 +39,6 @@ class NamingContext:
     root_group: str
     tier: Optional[str] = None
     date: Optional[str] = None
-    index: Optional[int] = None
 
 
 def format_date(date_str: Optional[str] = None) -> str:
@@ -95,10 +94,4 @@ def generate_campaign_name(template: NamingTemplate, context: NamingContext) -> 
     # Filter out empty parts
     parts = [p for p in parts if p]
 
-    name = template.separator.join(parts)
-
-    # Add index suffix if provided and > 0
-    if context.index is not None and context.index > 0:
-        name += f" {context.index + 1}"
-
-    return name
+    return template.separator.join(parts)

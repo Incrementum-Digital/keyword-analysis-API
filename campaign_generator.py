@@ -237,10 +237,8 @@ def generate_campaigns(input_data: GenerateInput) -> List[Campaign]:
                 for i in range(0, len(tier_kws), tier.max_keywords):
                     tier_chunks.append(tier_kws[i:i + tier.max_keywords])
 
-                # Create campaigns with per-tier indexing
+                # Create campaigns — deduplication handles numbering after
                 for chunk_idx, chunk_kws in enumerate(tier_chunks):
-                    # Only show index if multiple chunks in THIS tier
-                    index_for_name = chunk_idx if len(tier_chunks) > 1 else None
                     campaigns.append(Campaign(
                         id=_gen_id(),
                         name=generate_campaign_name(
@@ -251,7 +249,6 @@ def generate_campaigns(input_data: GenerateInput) -> List[Campaign]:
                                 root_group=root_name,
                                 tier=tier.label if len(tiers) > 1 else None,
                                 date=config.start_date,
-                                index=index_for_name,
                             )
                         ),
                         match_type=match_type,
@@ -277,7 +274,6 @@ def generate_campaigns(input_data: GenerateInput) -> List[Campaign]:
                     uncaught_chunks.append(uncaught[i:i + fallback_max])
 
                 for chunk_idx, chunk_kws in enumerate(uncaught_chunks):
-                    index_for_name = chunk_idx if len(uncaught_chunks) > 1 else None
                     campaigns.append(Campaign(
                         id=_gen_id(),
                         name=generate_campaign_name(
@@ -288,7 +284,6 @@ def generate_campaigns(input_data: GenerateInput) -> List[Campaign]:
                                 root_group=root_name,
                                 tier='All',
                                 date=config.start_date,
-                                index=index_for_name,
                             )
                         ),
                         match_type=match_type,
@@ -343,7 +338,36 @@ def generate_campaigns(input_data: GenerateInput) -> List[Campaign]:
                 is_auto=match_type == 'auto',
             ))
 
-    return campaigns
+    return _deduplicate_campaign_names(campaigns)
+
+
+def _deduplicate_campaign_names(campaigns: List[Campaign]) -> List[Campaign]:
+    """Add numeric suffixes to duplicate campaign names."""
+    name_counts: Dict[str, int] = {}
+    for c in campaigns:
+        name_counts[c.name] = name_counts.get(c.name, 0) + 1
+
+    all_names: Set[str] = set()
+    for c in campaigns:
+        if name_counts[c.name] == 1:
+            all_names.add(c.name)
+
+    name_index: Dict[str, int] = {}
+    result = []
+    for c in campaigns:
+        if name_counts[c.name] == 1:
+            result.append(c)
+        else:
+            idx = name_index.get(c.name, 0) + 1
+            new_name = f"{c.name} {idx}"
+            while new_name in all_names:
+                idx += 1
+                new_name = f"{c.name} {idx}"
+            name_index[c.name] = idx
+            all_names.add(new_name)
+            c.name = new_name
+            result.append(c)
+    return result
 
 
 def detect_roots_from_keywords(keywords: List[Keyword]) -> List[RootGroup]:
