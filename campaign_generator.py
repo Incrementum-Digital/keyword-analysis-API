@@ -82,7 +82,7 @@ class GenerateInput:
     def __post_init__(self):
         if self.naming_template is None:
             self.naming_template = NamingTemplate(
-                tokens=["SKU", "SP", "MATCH", "ROOT"],
+                tokens=["SKU", "SP", "MATCH", "GROUP"],
                 separator="_"
             )
 

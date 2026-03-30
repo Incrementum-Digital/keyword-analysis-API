@@ -42,7 +42,7 @@ class MatchTypeConfig(BaseModel):
 class NamingTemplate(BaseModel):
     """Campaign naming template configuration"""
     tokens: List[str] = Field(
-        default=["SKU", "SP", "MATCH", "ROOT"],
+        default=["SKU", "SP", "MATCH", "GROUP"],
         description="Ordered list of tokens to include in campaign name"
     )
     separator: str = Field(default="_", description="Separator between tokens")

@@ -67,7 +67,7 @@ def resolve_token(token: str, context: NamingContext, custom_tokens: Dict[str, s
         return 'Auto' if context.match_type.lower() == 'auto' else 'M'
     elif token_upper in ('MATCH', 'MATCH TYPE', 'MATCH_TYPE'):
         return MATCH_ABBREV.get(context.match_type.lower(), context.match_type)
-    elif token_upper == 'ROOT':
+    elif token_upper in ('GROUP', 'ROOT'):
         return context.root_group.replace(' ', '_')
     elif token_upper == 'TIER':
         return context.tier or ''

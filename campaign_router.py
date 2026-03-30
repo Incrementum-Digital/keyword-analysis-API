@@ -663,7 +663,7 @@ async def generate_campaigns(
 
         # Build naming template
         naming_template = GenNamingTemplate(
-            tokens=request.config.naming_template.tokens or ["SKU", "SP", "MATCH", "ROOT"],
+            tokens=request.config.naming_template.tokens or ["SKU", "SP", "MATCH", "GROUP"],
             separator=request.config.naming_template.separator or "_",
             custom_tokens=request.config.naming_template.custom_tokens or {}
         )
