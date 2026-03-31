@@ -69,7 +69,8 @@ class NamingTemplate(BaseModel):
 
 class CampaignSessionConfig(BaseModel):
     """Full campaign session configuration"""
-    sku: str = Field(default="", description="Product SKU")
+    account_type: str = Field(default="seller", description="Account type: 'seller' or 'vendor'")
+    sku: str = Field(default="", description="Product SKU or ASIN")
     naming_template: NamingTemplate = Field(default_factory=NamingTemplate)
     match_type_configs: Dict[str, MatchTypeConfig] = Field(
         default_factory=dict,

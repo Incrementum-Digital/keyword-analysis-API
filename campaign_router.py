@@ -1442,8 +1442,9 @@ async def download_bulk_sheet(
                     phrase=negs.phrase
                 )
 
-        # Get SKU from config
+        # Get SKU/ASIN and account type from config
         sku = config.get("sku", "")
+        account_type = config.get("account_type", "seller")
 
         # Generate bulk sheet
         options = ExportOptions(
@@ -1452,6 +1453,7 @@ async def download_bulk_sheet(
             include_keyword_rows=True,
             include_product_ad_rows=True,
             sku=sku,
+            account_type=account_type,
             format=format,
         )
 

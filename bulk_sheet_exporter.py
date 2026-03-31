@@ -107,6 +107,7 @@ class ExportOptions:
     include_keyword_rows: bool = True
     include_product_ad_rows: bool = True
     sku: str = ""
+    account_type: str = "seller"  # "seller" or "vendor"
     format: str = "new"  # "new" or "legacy"
 
 
@@ -177,7 +178,8 @@ def generate_bulk_sheet(
     """
     rows: List[Dict[str, str]] = []
     keyword_map = {kw.id: kw for kw in keywords}
-    skus = [s.strip() for s in options.sku.split(',') if s.strip()]
+    product_ids = [s.strip() for s in options.sku.split(',') if s.strip()]
+    is_vendor = options.account_type == 'vendor'
 
     for campaign in campaigns:
         override = overrides.get(campaign.id, CampaignOverride())
@@ -240,9 +242,9 @@ def generate_bulk_sheet(
             row['Ad Group Default Bid'] = str(campaign.default_bid)
             rows.append(row)
 
-        # 3. Product Ad rows (one per SKU)
-        if options.include_product_ad_rows and skus:
-            for sku in skus:
+        # 3. Product Ad rows (one per SKU/ASIN)
+        if options.include_product_ad_rows and product_ids:
+            for pid in product_ids:
                 row = empty_row()
                 row['Product'] = 'Sponsored Products'
                 row['Entity'] = 'Product Ad'
@@ -252,7 +254,10 @@ def generate_bulk_sheet(
                 row['Campaign Name'] = campaign.name
                 row['Ad Group Name'] = campaign.name
                 row['State'] = 'enabled'
-                row['SKU'] = sku
+                if is_vendor:
+                    row['ASIN'] = pid
+                else:
+                    row['SKU'] = pid
                 rows.append(row)
 
         # 4. Keyword rows (manual keyword campaigns: Exact, Phrase, Broad)
