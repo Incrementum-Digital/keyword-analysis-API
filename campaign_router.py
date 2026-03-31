@@ -1446,6 +1446,15 @@ async def download_bulk_sheet(
         sku = config.get("sku", "")
         account_type = config.get("account_type", "seller")
 
+        # Build auto_targeting_groups from auto campaigns' keyword_ids
+        # For auto campaigns, keyword_ids contains the selected targeting type IDs
+        # (e.g., ["close_match", "loose_match"]). The exporter uses this to set
+        # selected types as enabled and unselected types as paused.
+        auto_targeting_groups = {}
+        for c in export_campaigns:
+            if c.is_auto and c.root_group is not None:
+                auto_targeting_groups[c.root_group] = c.keyword_ids
+
         # Generate bulk sheet
         options = ExportOptions(
             include_campaign_rows=True,
@@ -1462,6 +1471,7 @@ async def download_bulk_sheet(
             keywords=keywords,
             overrides={},
             options=options,
+            auto_targeting_groups=auto_targeting_groups if auto_targeting_groups else None,
             campaign_negatives=campaign_negatives,
         )
 
