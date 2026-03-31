@@ -113,7 +113,7 @@ class ExportOptions:
 def format_bidding_strategy(strategy: str) -> str:
     """Format bidding strategy for Amazon bulk sheet."""
     strategies = {
-        'Fixed': 'Fixed bids',
+        'Fixed': 'Fixed bid',
         'Dynamic Down': 'Dynamic bids - down only',
         'Dynamic Up & Down': 'Dynamic bids - up and down',
     }
@@ -199,9 +199,10 @@ def generate_bulk_sheet(
             row['Product'] = 'Sponsored Products'
             row['Entity'] = 'Campaign'
             row['Operation'] = 'Create'
+            row['Campaign Id'] = campaign.name
             row['Campaign Name'] = campaign.name
             row['Start Date'] = format_date(campaign.start_date)
-            row['Targeting Type'] = 'auto' if campaign.is_auto else 'manual'
+            row['Targeting Type'] = 'Auto' if campaign.is_auto else 'Manual'
             row['State'] = campaign.status.lower()
             row['Daily Budget'] = str(daily_budget)
             row['Bidding Strategy'] = format_bidding_strategy(campaign.bidding_strategy)
@@ -219,6 +220,7 @@ def generate_bulk_sheet(
                         prow['Product'] = 'Sponsored Products'
                         prow['Entity'] = 'Bidding Adjustment'
                         prow['Operation'] = 'Create'
+                        prow['Campaign Id'] = campaign.name
                         prow['Campaign Name'] = campaign.name
                         prow['Placement'] = placement_type
                         prow['Percentage'] = str(pct)
@@ -228,8 +230,10 @@ def generate_bulk_sheet(
         if options.include_ad_group_rows:
             row = empty_row()
             row['Product'] = 'Sponsored Products'
-            row['Entity'] = 'Ad group'
+            row['Entity'] = 'Ad Group'
             row['Operation'] = 'Create'
+            row['Campaign Id'] = campaign.name
+            row['Ad Group Id'] = campaign.name
             row['Campaign Name'] = campaign.name
             row['Ad Group Name'] = campaign.name
             row['State'] = 'enabled'
@@ -241,8 +245,10 @@ def generate_bulk_sheet(
             for sku in skus:
                 row = empty_row()
                 row['Product'] = 'Sponsored Products'
-                row['Entity'] = 'Product ad'
+                row['Entity'] = 'Product Ad'
                 row['Operation'] = 'Create'
+                row['Campaign Id'] = campaign.name
+                row['Ad Group Id'] = campaign.name
                 row['Campaign Name'] = campaign.name
                 row['Ad Group Name'] = campaign.name
                 row['State'] = 'enabled'
@@ -265,6 +271,8 @@ def generate_bulk_sheet(
                 row['Product'] = 'Sponsored Products'
                 row['Entity'] = 'Keyword'
                 row['Operation'] = 'Create'
+                row['Campaign Id'] = campaign.name
+                row['Ad Group Id'] = campaign.name
                 row['Campaign Name'] = campaign.name
                 row['Ad Group Name'] = campaign.name
                 row['State'] = 'paused' if is_paused else 'enabled'
@@ -286,6 +294,8 @@ def generate_bulk_sheet(
                 row['Product'] = 'Sponsored Products'
                 row['Entity'] = 'Product Targeting'
                 row['Operation'] = 'Create'
+                row['Campaign Id'] = campaign.name
+                row['Ad Group Id'] = campaign.name
                 row['Campaign Name'] = campaign.name
                 row['Ad Group Name'] = campaign.name
                 row['State'] = 'enabled'
@@ -304,6 +314,8 @@ def generate_bulk_sheet(
                 row['Product'] = 'Sponsored Products'
                 row['Entity'] = 'Product Targeting'
                 row['Operation'] = 'Create'
+                row['Campaign Id'] = campaign.name
+                row['Ad Group Id'] = campaign.name
                 row['Campaign Name'] = campaign.name
                 row['Ad Group Name'] = campaign.name
                 row['State'] = 'enabled' if type_id in selected_types else 'paused'
@@ -318,8 +330,9 @@ def generate_bulk_sheet(
             for kw_text in negs.exact:
                 row = empty_row()
                 row['Product'] = 'Sponsored Products'
-                row['Entity'] = 'Campaign negative keyword'
+                row['Entity'] = 'Campaign Negative Keyword'
                 row['Operation'] = 'Create'
+                row['Campaign Id'] = campaign.name
                 row['Campaign Name'] = campaign.name
                 row['State'] = 'enabled'
                 row['Keyword Text'] = kw_text
@@ -329,8 +342,9 @@ def generate_bulk_sheet(
             for kw_text in negs.phrase:
                 row = empty_row()
                 row['Product'] = 'Sponsored Products'
-                row['Entity'] = 'Campaign negative keyword'
+                row['Entity'] = 'Campaign Negative Keyword'
                 row['Operation'] = 'Create'
+                row['Campaign Id'] = campaign.name
                 row['Campaign Name'] = campaign.name
                 row['State'] = 'enabled'
                 row['Keyword Text'] = kw_text
@@ -345,9 +359,22 @@ def generate_bulk_sheet(
     # Write header
     ws.append(COLUMNS)
 
+    # Column indices for date fields (1-based for openpyxl)
+    start_date_col = COLUMNS.index('Start Date') + 1
+    end_date_col = COLUMNS.index('End Date') + 1
+
     # Write data rows
     for row_data in rows:
-        ws.append([row_data.get(col, '') for col in COLUMNS])
+        row_values = [row_data.get(col, '') for col in COLUMNS]
+        ws.append(row_values)
+        # Ensure Start Date and End Date cells are stored as text, not numbers.
+        # openpyxl may coerce all-digit strings to float during append.
+        row_idx = ws.max_row
+        for col_idx in (start_date_col, end_date_col):
+            cell = ws.cell(row=row_idx, column=col_idx)
+            if cell.value is not None and cell.value != '':
+                cell.value = str(int(cell.value)) if isinstance(cell.value, (int, float)) else str(cell.value)
+                cell.number_format = '@'  # Text format
 
     return wb
 
