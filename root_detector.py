@@ -119,8 +119,8 @@ def assign_keywords_to_roots(
         if selected_root_names is None or r.name in selected_root_names
     ]
 
-    # Sort by word count (desc), then by character length (desc)
-    sorted_roots.sort(key=lambda r: (-len(r.name.split()), -len(r.name)))
+    # Sort by word count (desc), then by keyword count (asc, smaller set wins), then name (asc)
+    sorted_roots.sort(key=lambda r: (-len(r.name.split()), len(r.keyword_ids), r.name))
 
     for kw in keywords:
         normalized_lower = kw.normalized_text.lower()
