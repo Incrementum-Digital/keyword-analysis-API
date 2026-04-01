@@ -324,7 +324,7 @@ def generate_bulk_sheet(
                 row['Campaign Name'] = campaign.name
                 row['Ad Group Name'] = campaign.name
                 row['State'] = 'enabled' if type_id in selected_types else 'paused'
-                row['Bid'] = str(campaign.default_bid)
+                row['Bid'] = str(base_bid)
                 row['Product Targeting Expression'] = AUTO_TARGET_EXPRESSIONS.get(type_id, type_id)
                 rows.append(row)
 
