@@ -52,12 +52,47 @@ from bulk_sheet_exporter import (
     generate_bulk_sheet,
     workbook_to_bytes,
     get_export_summary,
+    calculate_base_bid,
 )
 from supabase_client import get_supabase_client
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/campaign-sessions", tags=["campaign-sessions"])
+
+
+def _compute_calculated_bid(campaign: dict, config: dict) -> float:
+    """Compute calculated base bid from campaign data and session config.
+
+    Uses the same calculate_base_bid() function as bulk sheet export to ensure
+    the preview bid matches the exported bid.
+    """
+    keyword_bid = campaign.get("keyword_bid")
+    default_bid = campaign.get("default_bid", 0)
+    bid = keyword_bid if keyword_bid is not None else default_bid
+    if not bid:
+        return bid or 0.0
+
+    match_type = campaign.get("match_type", "")
+    bidding_strategy = campaign.get("bidding_strategy", "Fixed")
+
+    # Look up placement multiplier settings from session config
+    mtc = config.get("match_type_configs", {}).get(match_type, {})
+    placement_enabled = mtc.get("placement_multipliers_enabled", False)
+    pm = mtc.get("placement_multipliers") or {}
+    top_pct = pm.get("top_of_search", 0)
+    rest_pct = pm.get("rest_of_search", 0)
+    product_pct = pm.get("product_page", 0)
+
+    result = calculate_base_bid(
+        max_bid=Decimal(str(bid)),
+        bidding_strategy=bidding_strategy,
+        placement_enabled=placement_enabled,
+        top_pct=top_pct,
+        rest_pct=rest_pct,
+        product_pct=product_pct,
+    )
+    return float(result)
 
 
 # ============================================================================
@@ -195,6 +230,7 @@ async def get_campaign_session(session_id: UUID, user_id: str):
         ).eq("campaign_session_id", str(session_id)).execute()
 
         campaigns = []
+        session_config = row.get("config", {})
         for c in campaigns_result.data or []:
             campaigns.append(CampaignResponse(
                 id=c["id"],
@@ -211,6 +247,7 @@ async def get_campaign_session(session_id: UUID, user_id: str):
                 is_solo=c.get("is_solo", False),
                 is_auto=c.get("is_auto", False),
                 sv_tier=c.get("sv_tier"),
+                calculated_base_bid=_compute_calculated_bid(c, session_config),
             ))
 
         # Get normalization decisions
@@ -758,6 +795,9 @@ async def generate_campaigns(
                 is_solo=db_campaign.get("is_solo", False),
                 is_auto=db_campaign.get("is_auto", False),
                 sv_tier=db_campaign.get("sv_tier"),
+                calculated_base_bid=_compute_calculated_bid(
+                    db_campaign, request.config.model_dump(mode="json")
+                ),
             ))
 
         # Batch insert all campaign keywords at once
@@ -796,9 +836,9 @@ async def list_campaigns(session_id: UUID, user_id: str):
         )
 
     try:
-        # Verify session ownership
+        # Verify session ownership and get config
         session = supabase.schema("keyword_analysis").table("campaign_sessions").select(
-            "id"
+            "id, config"
         ).eq("id", str(session_id)).eq("user_id", user_id).execute()
 
         if not session.data:
@@ -806,6 +846,8 @@ async def list_campaigns(session_id: UUID, user_id: str):
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Campaign session not found"
             )
+
+        session_config = session.data[0].get("config", {})
 
         # Get campaigns
         result = supabase.schema("keyword_analysis").table("campaigns").select(
@@ -829,6 +871,7 @@ async def list_campaigns(session_id: UUID, user_id: str):
                 is_solo=c.get("is_solo", False),
                 is_auto=c.get("is_auto", False),
                 sv_tier=c.get("sv_tier"),
+                calculated_base_bid=_compute_calculated_bid(c, session_config),
             ))
 
         return CampaignListResponse(
@@ -866,9 +909,9 @@ async def update_campaign(
         )
 
     try:
-        # Verify session ownership
+        # Verify session ownership and get config
         session = supabase.schema("keyword_analysis").table("campaign_sessions").select(
-            "id"
+            "id, config"
         ).eq("id", str(session_id)).eq("user_id", user_id).execute()
 
         if not session.data:
@@ -876,6 +919,8 @@ async def update_campaign(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Campaign session not found"
             )
+
+        session_config = session.data[0].get("config", {})
 
         # Build update data
         update_data = {}
@@ -927,6 +972,7 @@ async def update_campaign(
             is_solo=c.get("is_solo", False),
             is_auto=c.get("is_auto", False),
             sv_tier=c.get("sv_tier"),
+            calculated_base_bid=_compute_calculated_bid(c, session_config),
         )
 
     except HTTPException:

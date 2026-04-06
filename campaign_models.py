@@ -288,6 +288,7 @@ class CampaignResponse(BaseModel):
     is_solo: bool = False
     is_auto: bool = False
     sv_tier: Optional[str] = None
+    calculated_base_bid: Optional[float] = None
 
 
 class CampaignSessionResponse(BaseModel):
