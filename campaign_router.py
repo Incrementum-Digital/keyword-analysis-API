@@ -696,6 +696,13 @@ async def generate_campaigns(
 
         generated_campaigns = run_campaign_generator(gen_input)
 
+        # Persist the config used for generation to the session
+        # This ensures the session config stays in sync even if a prior
+        # config update mutation was lost or hasn't completed yet
+        supabase.schema("keyword_analysis").table("campaign_sessions").update(
+            {"config": request.config.model_dump(mode="json")}
+        ).eq("id", str(session_id)).execute()
+
         # Delete existing campaigns for this session
         supabase.schema("keyword_analysis").table("campaigns").delete().eq(
             "campaign_session_id", str(session_id)
