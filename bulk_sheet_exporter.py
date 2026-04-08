@@ -269,7 +269,19 @@ def generate_bulk_sheet(
                     continue
 
                 # Use per-keyword override bid if set, otherwise use calculated base bid
-                bid = override.keyword_bids.get(kw_id, base_bid)
+                # Override bids are max bids — apply same calculation as campaign-level
+                kw_override_bid = override.keyword_bids.get(kw_id)
+                if kw_override_bid is not None:
+                    bid = calculate_base_bid(
+                        max_bid=kw_override_bid,
+                        bidding_strategy=campaign.bidding_strategy,
+                        placement_enabled=campaign.placement_multipliers_enabled,
+                        top_pct=campaign.placement_top_of_search,
+                        rest_pct=campaign.placement_rest_of_search,
+                        product_pct=campaign.placement_product_page,
+                    )
+                else:
+                    bid = base_bid
                 is_paused = kw_id in paused_kw_ids
 
                 row = empty_row()
