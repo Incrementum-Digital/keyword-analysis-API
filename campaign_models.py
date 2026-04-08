@@ -197,6 +197,7 @@ class CampaignKeywordForExport(BaseModel):
     id: str = Field(..., description="Keyword ID")
     text: str = Field(..., description="Keyword text")
     sv: int = Field(default=0, description="Search volume")
+    bid: Optional[float] = Field(None, description="Per-keyword bid override")
 
 
 class CampaignForExport(BaseModel):
