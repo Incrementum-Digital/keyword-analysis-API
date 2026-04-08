@@ -1462,6 +1462,18 @@ async def download_bulk_sheet(
             if c.is_auto and c.root_group is not None:
                 auto_targeting_groups[c.root_group] = c.keyword_ids
 
+        # Build per-campaign overrides from frontend keyword bid data
+        campaign_overrides = {}
+        if request.campaigns:
+            for c in request.campaigns:
+                kw_bids = {}
+                if c.keywords:
+                    for kw in c.keywords:
+                        if kw.bid is not None:
+                            kw_bids[kw.id] = Decimal(str(kw.bid))
+                if kw_bids:
+                    campaign_overrides[c.id] = CampaignOverride(keyword_bids=kw_bids)
+
         # Generate bulk sheet
         options = ExportOptions(
             include_campaign_rows=True,
@@ -1476,7 +1488,7 @@ async def download_bulk_sheet(
         workbook = generate_bulk_sheet(
             campaigns=export_campaigns,
             keywords=keywords,
-            overrides={},
+            overrides=campaign_overrides,
             options=options,
             auto_targeting_groups=auto_targeting_groups if auto_targeting_groups else None,
             campaign_negatives=campaign_negatives,
